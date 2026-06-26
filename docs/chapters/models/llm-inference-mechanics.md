@@ -331,6 +331,32 @@ you'll often find recognizable roles — a coreference head, a previous-token he
     Same word, different jobs. "How many heads does the model have?" almost always means *attention
     heads per layer* — the `num_attention_heads` value.
 
+!!! question "Common question: do *more* attention heads give better output?"
+    Partly — but two traps hide in that intuition.
+
+    **More heads ≠ attending to more tokens.** Every head already attends over *all* prior tokens.
+    How far back you can reach is the **context window** (sequence length + KV cache), not the head
+    count. Adding heads gives you more *ways* to attend at once — more parallel relationship-types
+    — never more reach.
+
+    **It's a trade, not free capacity.** With `d_model` fixed, `d_head = d_model / h`, so more
+    heads means *thinner* heads: more simultaneous views, but each one less expressive. Push `h`
+    too high and a head has too few dimensions to represent anything useful. That's why `d_head` is
+    usually pinned around 64–128 and the head count *follows* from the model width rather than
+    being maximized.
+
+    **Returns diminish fast.** Heads are highly redundant — Michel et al. (2019)[^michel] showed
+    most heads can be pruned at inference with little quality loss; a few do the real work. So even
+    the diversity benefit caps out.
+
+    *(Shrinking the **KV** heads via GQA is a separate, memory-only move — it keeps every query
+    head's view but shares their keys and values.)*
+
+[^michel]:
+    Paul Michel, Omer Levy, Graham Neubig. *Are Sixteen Heads Really Better than One?*
+    Advances in Neural Information Processing Systems (NeurIPS) 2019. arXiv:1905.10650 —
+    [arxiv.org/abs/1905.10650](https://arxiv.org/abs/1905.10650).
+
 - **Self-attention** — Q, K, V all come from the *same* sequence. LLMs use this.
 - **Cross-attention** — Q comes from one sequence, K and V from another. Used in image/multimodal
   models to condition generation on a text prompt. (More in
