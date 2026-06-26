@@ -124,4 +124,5 @@ nav:
       - Multi-Cloud Capacity: chapters/production/multi-cloud-capacity.md
       - Testing & Deployment: chapters/production/testing-and-deployment.md
       - Client Code: chapters/production/client-code.md
+      - Putting It Together (worked example): chapters/production/worked-example.md
       - Hands-on - Quantization Pipeline on GKE: chapters/production/quantization-pipeline-gke.md

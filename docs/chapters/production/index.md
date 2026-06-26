@@ -52,8 +52,12 @@ Three shifts define production inference:
 
 </div>
 
-## Hands-on guides
+## Worked example & hands-on
 
+- [**Putting It Together**](worked-example.md) — a single B2B chat deployment (INT4 Qwen on L4)
+  decided end to end: replica sizing, autoscaler knobs, cold-start budget, routing, dedicated-vs-API
+  cost, reliability, and alerts — with consistent numbers. Read this once you've skimmed the
+  sections; it ties them together.
 - [**A Quantization Pipeline on GKE**](quantization-pipeline-gke.md) — productionize the Chapter 5
   quantization job as a scale-to-zero GPU batch job on Google Kubernetes Engine: containerize, run with
   Workload Identity, write to Cloud Storage, and roll it out to a vLLM serving Deployment. A concrete
