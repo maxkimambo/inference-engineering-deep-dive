@@ -107,6 +107,11 @@ nav:
       - Calculating Bottlenecks: chapters/models/bottlenecks.md
   - "3 · Hardware":
       - chapters/hardware/index.md
+      - Anatomy of a GPU: chapters/hardware/gpu-anatomy.md
+      - The Memory Hierarchy: chapters/hardware/memory-hierarchy.md
+      - Compute & Precision: chapters/hardware/compute-and-precision.md
+      - Interconnect: chapters/hardware/interconnect.md
+      - Choosing a GPU: chapters/hardware/choosing-a-gpu.md
   - "4 · Software":
       - chapters/software/index.md
   - "5 · Techniques":
