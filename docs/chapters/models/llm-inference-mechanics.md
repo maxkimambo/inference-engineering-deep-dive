@@ -365,8 +365,19 @@ telling you it traded a little quality for an 8× smaller KV cache*. Now you kno
 
 ## Step 4 — From hidden state to the next token
 
-After the final block, the LM head projects the last token's hidden state to **logits** — one raw
-score per vocabulary token (so the logit vector is `vocab_size` long, often 100k+).
+After the final block, the LM head projects the last token's hidden state to **logits**.
+
+- **Logit** — a single *raw, unnormalized* score the model assigns to one vocabulary token,
+  answering "how strongly do I favor this as the next token?" There's one logit per token, so the
+  output is a vector `vocab_size` long (often 100k+). A logit is just a real number — it can be
+  negative, zero, or large; **bigger means more favored**. Crucially, logits are **not**
+  probabilities: they don't sit between 0 and 1 and they don't sum to 1. Converting them into
+  probabilities is a separate step — **softmax** (the same function from inside attention).
+
+**Tiny example.** For a 4-word vocabulary the model might emit logits `[2.5, -1.0, 0.3, 1.2]`. You
+can't read those as percentages. Softmax exponentiates and normalizes them into
+`[0.71, 0.02, 0.08, 0.19]` — *now* they're probabilities (sum to 1), and the token that had logit
+`2.5` is the most likely at 71%. Real vocabularies are 100k+ wide, but the mechanic is identical.
 
 ```
  hidden state ──► LM head (matmul) ──► logits        ──► softmax ──► probabilities
