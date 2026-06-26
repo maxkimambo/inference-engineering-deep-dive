@@ -16,6 +16,12 @@ It assumes you can read code and know what an array, a number, and computer memo
 ML-specific term is **defined the first time it appears**, with an analogy and usually a tiny
 worked example. It is long on purpose.
 
+!!! quote "Why this site exists"
+    I wanted to understand the *entire* LLM-inference black box — not just operate the knobs, but
+    know **why** every piece works the way it does, end to end. This site is me working that out in
+    the open, going deeper on the points other guides skip, and sharing the learnings so they're
+    useful to anyone else chasing the same understanding. — Max
+
 ## How to read this
 
 <div class="grid cards" markdown>
@@ -55,5 +61,22 @@ worked example. It is long on purpose.
 | 7 | [Production](chapters/production/index.md) | Scale, deploy, and observe a real serving system |
 
 !!! note "Status"
-    Chapter 2 (Models) is written to full depth as the reference for tone and rigor. The
-    remaining chapters are scaffolded and filled in iteratively.
+    This is still work in progress chapters are being added.
+
+## Sources & acknowledgements
+
+This site is **heavily based on two excellent books**, which provided the structure and much of the
+source material. I reorganized, went deeper on the points I wanted to understand fully, and added my
+own worked examples, diagrams, and hands-on guides — but the foundations are theirs, and I'm grateful
+for both:
+
+- ***Inference Engineering*** — Philip Kiely (Baseten Books, 2026). The eight-chapter arc and the
+  framing of this site follow the book; its companion site is
+  [inferenceengineering.tech](https://inferenceengineering.tech).
+- ***Quantization and Fast Inference: A Practitioner's Guide to Efficient AI*** — Vivek
+  Kalyanarangan (Manning, 2026). The basis for the deeper quantization material (number formats, the
+  affine mapping, scale and zero-point).
+
+This is an independent personal learning project — not affiliated with or endorsed by either author
+or publisher. If you want the canonical, authoritative treatments, **read the books.**
+
