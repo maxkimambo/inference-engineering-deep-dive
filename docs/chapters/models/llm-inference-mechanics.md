@@ -226,10 +226,56 @@ Walk through it mechanically:
 
 ### Multi-head attention
 
-Attention sublayers are **multi-head**: the operation runs several times in parallel, each a
-**head** with its own \(W_Q, W_K, W_V\). Different heads specialize — one tracks subject-verb
-agreement, another tracks coreference ("it" → "book"), another tracks position. Their outputs are
-concatenated and mixed by one more linear layer.
+So far we've described *one* attention operation over the token's full `d_model`-wide vector. Real
+models don't do that — they **split the vector into several smaller slices and run attention on
+each slice independently**. Each independent attention is a **head**.
+
+- **Attention head** — one self-contained attention unit. It has its *own* learned
+  \(W_Q, W_K, W_V\) and runs the full scaled-dot-product attention on a *slice* of the hidden
+  state. A transformer block contains many heads running in parallel.
+- **`d_head`** — the width of one head's slice. With hidden size `d_model` and `h` heads,
+  `d_head = d_model / h`. Example: a `d_model = 4096` vector split across `32` heads gives
+  `d_head = 128` — each head attends inside its own 128-dimensional subspace.
+
+Mechanically, per token: split the `d_model` vector into `h` chunks → each head computes its own
+Q/K/V and does attention on its chunk → concatenate the `h` outputs back to `d_model` → one final
+linear layer mixes them.
+
+```
+ token hidden state  (d_model = 4096)
+        │  split into 32 slices of 128
+   ┌────┼─────┬─────┬─ … ─┐
+ head1  head2 head3  …  head32     ← each runs its own attention (own Wq,Wk,Wv)
+   └────┼─────┴─────┴─ … ─┘
+        │  concatenate back to 4096
+        ▼
+   output projection (one matmul)  →  d_model
+```
+
+**Why split at all — the purpose.** A single attention produces exactly *one* weighted blend of
+prior tokens per step: the token gets *one* "focus." Language needs more than one at a time. In
+*"the keys that he left **are** on the table,"* the verb "are" depends on "keys" (subject-verb
+agreement) **and** on nearby words (position) **and** possibly a pronoun elsewhere (coreference). A
+single focus can't track all three. **Multiple heads give each token several focuses at once** —
+picture independent spotlights, each free to attend to a different kind of relationship. No one
+tells a head what to specialize in; training discovers it. Inspect a trained model afterward and
+you'll often find recognizable roles — a coreference head, a previous-token head, a syntax head.
+
+!!! info "Where the head count lives: `num_attention_heads`"
+    The number of heads is a fixed architectural decision, listed in the model's `config.json` as
+    `num_attention_heads` (the count of **query** heads). The related `num_key_value_heads`
+    controls how many *key/value* heads exist — usually fewer, which is the GQA trick in the next
+    subsection. The identity to remember: `num_attention_heads * d_head = d_model`.
+
+!!! warning "\"Head\" is overloaded — two unrelated things share the name"
+    - **Attention head** (this section): one of many parallel attention units *inside every
+      transformer block*. A model has, e.g., 32 of them **per layer**, so hundreds in total.
+    - **Output head / LM head** ([the stack diagram](#step-2-the-transformer-stack) and Step 4):
+      the **single** final projection that turns the last hidden state into vocabulary logits.
+      Exactly one exists, at the very top of the stack.
+
+    Same word, different jobs. "How many heads does the model have?" almost always means *attention
+    heads per layer* — the `num_attention_heads` value.
 
 - **Self-attention** — Q, K, V all come from the *same* sequence. LLMs use this.
 - **Cross-attention** — Q comes from one sequence, K and V from another. Used in image/multimodal
