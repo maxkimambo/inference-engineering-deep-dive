@@ -318,7 +318,7 @@ you'll often find recognizable roles — a coreference head, a previous-token he
 !!! info "Where the head count lives: `num_attention_heads`"
     The number of heads is a fixed architectural decision, listed in the model's `config.json` as
     `num_attention_heads` (the count of **query** heads). The related `num_key_value_heads`
-    controls how many *key/value* heads exist — usually fewer, which is the GQA trick in the next
+    controls how many *key/value* heads exist — usually fewer, which is the GQA (Grouped query attention) trick in the next
     subsection. The identity to remember: `num_attention_heads * d_head = d_model`.
 
 !!! warning "\"Head\" is overloaded — two unrelated things share the name"
