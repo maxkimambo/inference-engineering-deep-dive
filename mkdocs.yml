@@ -110,7 +110,19 @@ nav:
       - chapters/software/index.md
   - "5 · Techniques":
       - chapters/techniques/index.md
+      - Quantization: chapters/techniques/quantization.md
+      - Speculative Decoding: chapters/techniques/speculative-decoding.md
+      - Caching: chapters/techniques/caching.md
+      - Parallelism: chapters/techniques/parallelism.md
+      - Disaggregation: chapters/techniques/disaggregation.md
   - "6 · Modalities":
       - chapters/modalities/index.md
   - "7 · Production":
       - chapters/production/index.md
+      - Containerization: chapters/production/containerization.md
+      - Autoscaling: chapters/production/autoscaling.md
+      - Multi-Cloud Capacity: chapters/production/multi-cloud-capacity.md
+      - Testing & Deployment: chapters/production/testing-and-deployment.md
+      - Client Code: chapters/production/client-code.md
+      - Putting It Together (worked example): chapters/production/worked-example.md
+      - Hands-on - Quantization Pipeline on GKE: chapters/production/quantization-pipeline-gke.md
