@@ -110,6 +110,11 @@ nav:
       - chapters/software/index.md
   - "5 · Techniques":
       - chapters/techniques/index.md
+      - Quantization: chapters/techniques/quantization.md
+      - Speculative Decoding: chapters/techniques/speculative-decoding.md
+      - Caching: chapters/techniques/caching.md
+      - Parallelism: chapters/techniques/parallelism.md
+      - Disaggregation: chapters/techniques/disaggregation.md
   - "6 · Modalities":
       - chapters/modalities/index.md
   - "7 · Production":
