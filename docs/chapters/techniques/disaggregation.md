@@ -80,9 +80,9 @@ Real traffic is heterogeneous and shifts over the day, so a fixed prefill/decode
 - A **prefill queue** to hold requests when all prefill engines are saturated.
 - **Conditional disaggregation** with prefill routing based on configurable thresholds (input-sequence
   length after prefix-cache, queue size).
-- Efficient **NIXL-based KV transfer** from prefill to decode, including a kernel to transpose KV blocks
-  when the two engines run **different TP configurations** (which they will, since you tuned them
-  separately).
+- Efficient KV transfer over **NIXL** (NVIDIA Inference Xfer Library, its high-speed data-movement
+  layer) from prefill to decode, including a kernel to transpose KV blocks when the two engines run
+  **different TP configurations** (which they will, since you tuned them separately).
 
 Together these let the **number of prefill and decode engines flex at runtime** to track changing
 traffic.

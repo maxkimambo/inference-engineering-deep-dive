@@ -8,8 +8,8 @@ the whole game becomes doing that *without* drowning in inter-GPU communication.
 
 A clean rule of thumb: **in FP8, one billion parameters of weights ≈ 1 GB of VRAM** (FP8 = 1 byte each).
 
-Take **DeepSeek-V3.1**, 671B parameters. The weights alone are ~671 GB — a single 180 GB B200 OOMs
-instantly. But weights are only half the story; you must also fit the **KV cache**, which often eats
+Take **DeepSeek-V3.1**, 671B parameters. The weights alone are ~671 GB — a single 180 GB B200 hits an
+out-of-memory (OOM) error instantly. But weights are only half the story; you must also fit the **KV cache**, which often eats
 **80%+ of the *remaining* VRAM**. So the real sizing multiplies weights by a KV allowance and rounds up
 to the next instance:
 

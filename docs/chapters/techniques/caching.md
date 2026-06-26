@@ -26,8 +26,8 @@ That's **prefix caching**, and it cuts TTFT.
 Two-token savings won't move TTFT. But prefix caching can skip prefill on *thousands* of tokens in the
 right domains:
 
-- **Complex system prompts** — agents, chatbots, RAG scaffolds, tool definitions: long, *identical*
-  preambles on every call.
+- **Complex system prompts** — agents, chatbots, retrieval-augmented generation (RAG) scaffolds, tool
+  definitions: long, *identical* preambles on every call.
 - **Code completion** — the same thousands of lines of file context passed every keystroke.
 - **Documents & retrieval** — repeated context ahead of each user question.
 - **Multi-turn chat** — every turn re-sends the whole prior conversation via the chat template.

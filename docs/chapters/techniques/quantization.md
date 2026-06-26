@@ -248,9 +248,7 @@ measure it, three ways, always apples-to-apples against the original weights:
 
 ## Worked example: taking Qwen from BF16 to INT4
 
-Let's run the whole pipeline on a real target: **Qwen2.5-7B**, shipped in **BF16** (16-bit — no model
-is 64-bit), quantized down to **INT4 weights**. This is the most common "shrink it to 4-bit" job, and
-its proper name is **W4A16** — *4-bit weights, 16-bit activations*. The activations stay at 16-bit on
+Let's run the whole pipeline on a real target: **Qwen2.5-7B**, shipped in **BF16** we are going to quantized it down to **INT4 weights**. This is the most common job, and would result into Qwen2.5-7B-**W4A16** — *4-bit weights, 16-bit activations*. The activations stay at 16-bit on
 purpose: the [sensitivity ladder](#what-the-sensitivity-ladder) says weights tolerate quantization best,
 so we crush them and leave everything else alone.
 
@@ -303,12 +301,14 @@ gets faster because it moves ¼ the weight bytes per token.
 ### Step 3 — but don't actually use round-to-nearest
 
 The Step 1 math is **round-to-nearest (RTN)** — the simplest scheme, and at INT4 it loses too much
-quality to ship. Real W4A16 uses a smarter **PTQ algorithm** that spends a little calibration compute to
-place the codes better:
+quality to ship. Real W4A16 uses a smarter **post-training quantization (PTQ)** algorithm (the same PTQ
+from [§5.1.2](#when-during-training-vs-after)) that spends a little calibration compute to place the
+codes better. The two you'll meet:
 
-- **GPTQ** — quantizes weights one column at a time, using second-order (Hessian) information to
-  **compensate the not-yet-quantized weights** for each rounding error. Minimizes the layer's *output*
-  error, not each weight's error.
+- **GPTQ** (Generative Pre-trained Transformer Quantization) — a named PTQ algorithm that quantizes
+  weights one column at a time, using second-order **Hessian** (loss-curvature) information to
+  **compensate the not-yet-quantized weights** for each rounding error. It minimizes the layer's
+  *output* error, not each individual weight's error.
 - **AWQ** (Activation-aware Weight Quantization) — notices that a few weight **channels** matter far more
   (judged by activation magnitude) and **scales those salient channels up** before quantizing, so
   rounding hurts them less. Often the best quality/speed for INT4.
