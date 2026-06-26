@@ -224,12 +224,138 @@ Walk through it mechanically:
 > so they sum to 1. `[2.0, 1.0, 0.1] → [0.66, 0.24, 0.10]`. It's how "raw scores" become "how much
 > to attend."
 
+#### What Q, K, and V actually look like
+
+Those symbols have stayed shapeless. Concretely, **each of Q, K, and V is just a vector of
+`d_head` numbers** — the per-head slice from multi-head attention below (real models use
+`d_head = 128`; we'll use 4 so it fits on the page).
+
+Take the text so far as *"The book was good, it…"* and let the current token `"it"` attend over
+three earlier tokens. Every token already has its Q/K/V — produced by multiplying its hidden state
+through \(W_Q, W_K, W_V\):
+
+```
+              Q, K, V are each a 4-number vector here (d_head = 4)
+
+current token  "it"    Q = [ 1.0,  0.5, -0.5,  2.0 ]
+
+prior token    "The"   K = [ 0.2,  0.1,  0.0,  0.1 ]   V = [ 0.1, 0.0, 0.2, 0.1 ]
+prior token    "book"  K = [ 0.9,  0.4, -0.3,  1.8 ]   V = [ 0.7, 0.9, 0.2, 0.8 ]
+prior token    "was"   K = [ 0.1, -0.2,  0.3,  0.2 ]   V = [ 0.0, 0.3, 0.1, 0.0 ]
+```
+
+**Steps 1–2** — score `"it"`'s query against each prior key (dot product, then ÷ √4 = ÷ 2):
+
+```
+score(it, The)  = (1.0*0.2 + 0.5*0.1  + -0.5*0.0  + 2.0*0.1) / 2 = 0.225
+score(it, book) = (1.0*0.9 + 0.5*0.4  + -0.5*-0.3 + 2.0*1.8) / 2 = 2.425   ◄ it & book align
+score(it, was)  = (1.0*0.1 + 0.5*-0.2 + -0.5*0.3  + 2.0*0.2) / 2 = 0.125
+```
+
+**Step 3** — softmax the three scores into attention weights:
+
+```
+softmax([0.225, 2.425, 0.125]) = [ 0.091, 0.826, 0.083 ]
+                                    The    book   was
+```
+
+`"it"` places **83% of its attention on "book"** — it has resolved the reference.
+
+**Step 4** — the output is the weighted sum of the *Value* vectors:
+
+```
+output = 0.091*V(The) + 0.826*V(book) + 0.083*V(was)
+       = [ 0.587, 0.768, 0.192, 0.670 ]      ← again a d_head-length vector
+```
+
+That output — dominated by book's value — is what this head contributes for `"it"`. It's the same
+length as the inputs (`d_head`), so it flows straight back into the pipeline; across all heads
+these outputs concatenate back up to `d_model`.
+
+!!! note "Scale check"
+    Here `d_head = 4` and 3 prior tokens. A real decode step has `d_head ≈ 128` and *thousands* of
+    prior tokens — each contributing a K and a V vector read from the **KV cache**. Identical four
+    steps, just bigger. That "thousands of K/V vectors" is exactly why the KV cache exists and why
+    its size dominates memory.
+
 ### Multi-head attention
 
-Attention sublayers are **multi-head**: the operation runs several times in parallel, each a
-**head** with its own \(W_Q, W_K, W_V\). Different heads specialize — one tracks subject-verb
-agreement, another tracks coreference ("it" → "book"), another tracks position. Their outputs are
-concatenated and mixed by one more linear layer.
+So far we've described *one* attention operation over the token's full `d_model`-wide vector. Real
+models don't do that — they **split the vector into several smaller slices and run attention on
+each slice independently**. Each independent attention is a **head**.
+
+- **Attention head** — one self-contained attention unit. It has its *own* learned
+  \(W_Q, W_K, W_V\) and runs the full scaled-dot-product attention on a *slice* of the hidden
+  state. A transformer block contains many heads running in parallel.
+- **`d_head`** — the width of one head's slice. With hidden size `d_model` and `h` heads,
+  `d_head = d_model / h`. Example: a `d_model = 4096` vector split across `32` heads gives
+  `d_head = 128` — each head attends inside its own 128-dimensional subspace.
+
+Mechanically, per token: split the `d_model` vector into `h` chunks → each head computes its own
+Q/K/V and does attention on its chunk → concatenate the `h` outputs back to `d_model` → one final
+linear layer mixes them.
+
+```
+ token hidden state  (d_model = 4096)
+        │  split into 32 slices of 128
+   ┌────┼─────┬─────┬─ … ─┐
+ head1  head2 head3  …  head32     ← each runs its own attention (own Wq,Wk,Wv)
+   └────┼─────┴─────┴─ … ─┘
+        │  concatenate back to 4096
+        ▼
+   output projection (one matmul)  →  d_model
+```
+
+**Why split at all — the purpose.** A single attention produces exactly *one* weighted blend of
+prior tokens per step: the token gets *one* "focus." Language needs more than one at a time. In
+*"the keys that he left **are** on the table,"* the verb "are" depends on "keys" (subject-verb
+agreement) **and** on nearby words (position) **and** possibly a pronoun elsewhere (coreference). A
+single focus can't track all three. **Multiple heads give each token several focuses at once** —
+picture independent spotlights, each free to attend to a different kind of relationship. No one
+tells a head what to specialize in; training discovers it. Inspect a trained model afterward and
+you'll often find recognizable roles — a coreference head, a previous-token head, a syntax head.
+
+!!! info "Where the head count lives: `num_attention_heads`"
+    The number of heads is a fixed architectural decision, listed in the model's `config.json` as
+    `num_attention_heads` (the count of **query** heads). The related `num_key_value_heads`
+    controls how many *key/value* heads exist — usually fewer, which is the GQA (Grouped query attention) trick in the next
+    subsection. The identity to remember: `num_attention_heads * d_head = d_model`.
+
+!!! warning "\"Head\" is overloaded — two unrelated things share the name"
+    - **Attention head** (this section): one of many parallel attention units *inside every
+      transformer block*. A model has, e.g., 32 of them **per layer**, so hundreds in total.
+    - **Output head / LM head** ([the stack diagram](#step-2-the-transformer-stack) and Step 4):
+      the **single** final projection that turns the last hidden state into vocabulary logits.
+      Exactly one exists, at the very top of the stack.
+
+    Same word, different jobs. "How many heads does the model have?" almost always means *attention
+    heads per layer* — the `num_attention_heads` value.
+
+!!! question "Common question: do *more* attention heads give better output?"
+    Partly — but two traps hide in that intuition.
+
+    **More heads ≠ attending to more tokens.** Every head already attends over *all* prior tokens.
+    How far back you can reach is the **context window** (sequence length + KV cache), not the head
+    count. Adding heads gives you more *ways* to attend at once — more parallel relationship-types
+    — never more reach.
+
+    **It's a trade, not free capacity.** With `d_model` fixed, `d_head = d_model / h`, so more
+    heads means *thinner* heads: more simultaneous views, but each one less expressive. Push `h`
+    too high and a head has too few dimensions to represent anything useful. That's why `d_head` is
+    usually pinned around 64–128 and the head count *follows* from the model width rather than
+    being maximized.
+
+    **Returns diminish fast.** Heads are highly redundant — Michel et al. (2019)[^michel] showed
+    most heads can be pruned at inference with little quality loss; a few do the real work. So even
+    the diversity benefit caps out.
+
+    *(Shrinking the **KV** heads via GQA is a separate, memory-only move — it keeps every query
+    head's view but shares their keys and values.)*
+
+[^michel]:
+    Paul Michel, Omer Levy, Graham Neubig. *Are Sixteen Heads Really Better than One?*
+    Advances in Neural Information Processing Systems (NeurIPS) 2019. arXiv:1905.10650 —
+    [arxiv.org/abs/1905.10650](https://arxiv.org/abs/1905.10650).
 
 - **Self-attention** — Q, K, V all come from the *same* sequence. LLMs use this.
 - **Cross-attention** — Q comes from one sequence, K and V from another. Used in image/multimodal
@@ -319,20 +445,42 @@ telling you it traded a little quality for an 8× smaller KV cache*. Now you kno
 
 ## Step 4 — From hidden state to the next token
 
-After the final block, the LM head projects the last token's hidden state to **logits** — one raw
-score per vocabulary token (so the logit vector is `vocab_size` long, often 100k+).
+After the final block, the LM head projects the last token's hidden state to **logits**.
+
+- **Logit** — a single *raw, unnormalized* score the model assigns to one vocabulary token,
+  answering "how strongly do I favor this as the next token?" There's one logit per token, so the
+  output is a vector `vocab_size` long (often 100k+). A logit is just a real number — it can be
+  negative, zero, or large; **bigger means more favored**. Crucially, logits are **not**
+  probabilities: they don't sit between 0 and 1 and they don't sum to 1. Converting them into
+  probabilities is a separate step — **softmax** (the same function from inside attention).
+
+**A concrete example.** Say the model has just read *"The capital of France is"* and must choose
+the next token. The LM head emits one logit for *every* token in the vocabulary — 100k+ of them —
+but almost all are tiny. Here are the handful that score highest, before and after softmax:
 
 ```
- hidden state ──► LM head (matmul) ──► logits        ──► softmax ──► probabilities
-                                       [ vocab-long ]                [ sums to 1 ]
-   A     →   .0001                         Abs  →  0.5967  →  80%
-   Ab    →   .0004                         Act  →  0.0983  →  12%
-   Abs   →   .5967     ◄── highest          …
-   …                                       next token:  "Abs"
+prompt:  "The capital of France is ___"
+
+ LM head ──► logits ──────────── softmax ──► probability
+   candidate token    logit                   prob
+   " Paris"            6.0        ───────►     86.1%   ◄── highest
+   " Lyon"             3.5        ───────►      7.1%
+   " London"           3.0        ───────►      4.3%
+   " a"                2.0        ───────►      1.6%
+   " the"              1.5        ───────►      1.0%
+   …(99,995 other tokens, each ≈ 0%)…
+        ▲                              ▲
+   raw scores, not                probabilities,
+   probabilities                  summing to 1
 ```
 
-Logits aren't probabilities yet — softmax makes them so. Then a token is **sampled** (a weighted
-random draw). You steer that draw with inference arguments:
+The raw logits mean nothing on their own — softmax exponentiates each and divides by the total, so
+larger logits dominate and the whole 100k-long vector becomes probabilities that sum to 1. The
+model then **samples** from this distribution: a weighted random draw. With `" Paris"` holding 86%
+of the probability mass, that's almost always the token that comes out. Append `" Paris"` to the
+text, feed the whole sequence back in, and the loop predicts the token after that.
+
+You steer that final draw with inference arguments:
 
 | Argument | Acts on | Effect |
 |----------|---------|--------|

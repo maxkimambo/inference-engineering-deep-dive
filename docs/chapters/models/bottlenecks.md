@@ -110,9 +110,9 @@ The algorithm has three steps, each a *read → compute → write*:
 
 | Step | Read (bytes) | Compute (FLOPs) | Write (bytes) |
 |------|--------------|-----------------|---------------|
-| `S = QKᵀ` | `2·N·d + 2·N·d` | `(2d)·(N·N)` | `2·N·N` |
-| `P = softmax(S)` | `2·N·N` | `3·(N·N)` | `2·N·N` |
-| `O = P·V` | `2·N·N + 2·N·d` | `(2N)·(N·d)` | `2·N·d` |
+| `S = QKᵀ` | `2*N*d + 2*N*d` | `(2d)*(N*N)` | `2*N*N` |
+| `P = softmax(S)` | `2*N*N` | `3*(N*N)` | `2*N*N` |
+| `O = P*V` | `2*N*N + 2*N*d` | `(2N)*(N*d)` | `2*N*d` |
 
 **Total memory traffic** (sum of reads + writes):
 

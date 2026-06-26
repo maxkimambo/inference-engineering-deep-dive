@@ -7,9 +7,17 @@ at the end — that framing is what the rest of the book leans on.
 
 ## The node: a tiny program
 
-The fundamental unit of a neural network is a **node** (a.k.a. **neuron**). A node is a very
-small program: it takes some input numbers, multiplies each by a **weight**, adds them up, adds a
-**bias**, and returns the result.
+The fundamental unit of a neural network is a **node**. A node is a very small program: it takes
+some input numbers, multiplies each by a **weight**, adds them up, adds a **bias**, and returns the
+result.
+
+!!! info "\"Node\" is the friendly name — here are the official ones"
+    A single node is the **artificial neuron**, the basic unit of every neural network. Its
+    original form — a single neuron that sums weighted inputs and applies a threshold — is the
+    **perceptron** (Frank Rosenblatt, 1958), the term you'll meet in textbooks and papers. Modern
+    neurons generalize the perceptron (smooth activations instead of a hard threshold), but it's
+    the same idea. We say "node" because it's the simplest way to picture it; reach for
+    **neuron** / **perceptron** when you read the literature.
 
 - **Weight** — a learned number that says *how much this input matters*. Set during training,
   frozen during inference.
@@ -23,8 +31,21 @@ inputs        weights
  x3 ──×w3──┘
 ```
 
-That's the whole node. A single one is almost useless. The power comes from stacking thousands of
-them and learning the weights.
+**A worked example.** Give the node three concrete inputs and its learned weights and bias:
+
+```
+x = [ 1.0,  2.0,  3.0 ]     ← the inputs
+w = [ 0.5, -1.0,  0.25]     ← the learned weights (one per input)
+b =   2.0                   ← the learned bias
+
+output = (1.0 * 0.5) + (2.0 * −1.0) + (3.0 * 0.25) + 2.0
+       =    0.5      +    −2.0       +    0.75      + 2.0
+       =    1.25
+```
+
+That single number `1.25` is the node's output — what it hands to the next layer. A node is
+*almost useless alone*; the power comes from stacking thousands of them and learning all the
+weights.
 
 ## Layers and the network
 
@@ -91,13 +112,38 @@ a \(3 \times 2\) grid and each output is a weighted sum of all inputs:
 x = [x1, x2, x3]
 
       | w11  w12 |
-W  =  | w21  w22 |          y1 = x1·w11 + x2·w21 + x3·w31 + b1
-      | w31  w32 |          y2 = x1·w12 + x2·w22 + x3·w32 + b2
+W  =  | w21  w22 |          y1 = x1*w11 + x2*w21 + x3*w31 + b1
+      | w31  w32 |          y2 = x1*w12 + x2*w22 + x3*w32 + b2
 
 y = [y1, y2]
 ```
 
-- The **shape** of \(W\) (here \(3 \times 2\)) sets how many numbers go in and come out.
+**With real numbers**, take the same `x = [1, 2, 3]` from the node example:
+
+```
+                | 0.5    0.0 |
+x = [1, 2, 3]   | 1.0   -1.0 |   b = [0.5, 0.5]
+                | 0.0    2.0 |
+                  ↑col1   ↑col2
+
+y1 = 1*0.5 + 2*1.0  + 3*0.0 + 0.5 = 3.0
+y2 = 1*0.0 + 2*(−1.0) + 3*2.0 + 0.5 = 4.5
+
+y = [3.0, 4.5]
+```
+
+Three numbers went in, two came out — the **shape** of \(W\) did the resizing; the **values** did
+the mixing.
+
+!!! key "A matmul *is* a layer of nodes — that's the whole connection"
+    Look at the columns of \(W\). **Column 1 `[0.5, 1.0, 0.0]` is one node's weights; column 2
+    `[0.0, −1.0, 2.0]` is another node's weights.** Computing `y1` is exactly running node 1;
+    computing `y2` is running node 2. A linear layer with 2 outputs is literally 2 nodes stacked
+    side by side, and the matmul runs them all at once. So everything from the node section scales
+    up by stacking columns — that's all a layer is.
+
+- The **shape** of \(W\) (here \(3 \times 2\)) sets how many numbers go in (rows) and come out
+  (columns).
 - The values inside \(W\) are weights, learned in training, frozen at inference.
 - The weights of *one* linear layer are a small slice of a model's total weights — a real LLM has
   hundreds of these.
