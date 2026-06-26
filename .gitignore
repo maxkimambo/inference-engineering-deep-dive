@@ -3,9 +3,3 @@ site/
 __pycache__/
 *.pyc
 .DS_Store
-
-# The global gitignore (~/.gitignore_global) excludes .github/* — re-include
-# this repo's CI workflows so they actually get committed and run.
-!.github/
-!.github/workflows/
-!.github/workflows/*.yml
