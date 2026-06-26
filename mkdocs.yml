@@ -1,4 +1,5 @@
 site_name: Inference Engineering — Deep
+site_url: https://inference.kimambo.de/
 site_description: >-
   A deep, from-the-ground-up guide to LLM and generative-model inference.
   Built for engineers who want to understand the why, not just the what.
