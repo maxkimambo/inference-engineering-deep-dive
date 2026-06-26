@@ -1,0 +1,116 @@
+site_name: Inference Engineering — Deep
+site_description: >-
+  A deep, from-the-ground-up guide to LLM and generative-model inference.
+  Built for engineers who want to understand the why, not just the what.
+site_author: Max Kimambo
+copyright: Copyright &copy; 2026 Max Kimambo
+
+theme:
+  name: material
+  language: en
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - navigation.indexes
+    - navigation.tracking
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+    - content.tooltips
+  palette:
+    - media: "(prefers-color-scheme)"
+      toggle:
+        icon: material/brightness-auto
+        name: Switch to light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: teal
+      accent: teal
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: teal
+      accent: teal
+      toggle:
+        icon: material/brightness-4
+        name: Switch to system preference
+  font:
+    text: Inter
+    code: JetBrains Mono
+
+markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+      toc_depth: 3
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.betterem
+  - pymdownx.caret
+  - pymdownx.tilde
+  - pymdownx.mark
+  - pymdownx.critic
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.snippets
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+
+extra_javascript:
+  - javascripts/mathjax.js
+  - https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js
+
+extra_css:
+  - stylesheets/extra.css
+
+plugins:
+  - search
+
+nav:
+  - Home: index.md
+  - "0 · Inference":
+      - chapters/inference/index.md
+  - "1 · Prerequisites":
+      - chapters/prerequisites/index.md
+  - "2 · Models":
+      - chapters/models/index.md
+      - Neural Networks: chapters/models/neural-networks.md
+      - LLM Inference Mechanics: chapters/models/llm-inference-mechanics.md
+      - Image & Video Generation: chapters/models/image-video-generation.md
+      - Calculating Bottlenecks: chapters/models/bottlenecks.md
+  - "3 · Hardware":
+      - chapters/hardware/index.md
+  - "4 · Software":
+      - chapters/software/index.md
+  - "5 · Techniques":
+      - chapters/techniques/index.md
+  - "6 · Modalities":
+      - chapters/modalities/index.md
+  - "7 · Production":
+      - chapters/production/index.md

@@ -1,0 +1,34 @@
+/* Wider content column for prose-heavy chapters */
+.md-grid {
+  max-width: 56rem;
+}
+
+/* Tighter, more readable callout titles */
+.md-typeset .admonition,
+.md-typeset details {
+  font-size: 0.78rem;
+}
+
+/* "Key point" custom admonition — matches the reference-doc style */
+:root {
+  --md-admonition-icon--key: url('data:image/svg+xml;charset=utf-8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M7 14a3 3 0 100-6 3 3 0 000 6zm0-8a5 5 0 014.9 4H22v2h-2v3h-2v-3h-2v3h-2v-3h-2.1A5 5 0 117 6z"/></svg>');
+}
+.md-typeset .admonition.key,
+.md-typeset details.key {
+  border-color: #ab47bc;
+}
+.md-typeset .key > .admonition-title,
+.md-typeset .key > summary {
+  background-color: rgba(171, 71, 188, 0.1);
+}
+.md-typeset .key > .admonition-title::before,
+.md-typeset .key > summary::before {
+  background-color: #ab47bc;
+  -webkit-mask-image: var(--md-admonition-icon--key);
+  mask-image: var(--md-admonition-icon--key);
+}
+
+/* ASCII / fixed-width diagrams should never wrap */
+.md-typeset pre code {
+  white-space: pre;
+}
