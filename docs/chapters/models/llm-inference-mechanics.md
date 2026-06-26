@@ -224,6 +224,60 @@ Walk through it mechanically:
 > so they sum to 1. `[2.0, 1.0, 0.1] → [0.66, 0.24, 0.10]`. It's how "raw scores" become "how much
 > to attend."
 
+#### What Q, K, and V actually look like
+
+Those symbols have stayed shapeless. Concretely, **each of Q, K, and V is just a vector of
+`d_head` numbers** — the per-head slice from multi-head attention below (real models use
+`d_head = 128`; we'll use 4 so it fits on the page).
+
+Take the text so far as *"The book was good, it…"* and let the current token `"it"` attend over
+three earlier tokens. Every token already has its Q/K/V — produced by multiplying its hidden state
+through \(W_Q, W_K, W_V\):
+
+```
+              Q, K, V are each a 4-number vector here (d_head = 4)
+
+current token  "it"    Q = [ 1.0,  0.5, -0.5,  2.0 ]
+
+prior token    "The"   K = [ 0.2,  0.1,  0.0,  0.1 ]   V = [ 0.1, 0.0, 0.2, 0.1 ]
+prior token    "book"  K = [ 0.9,  0.4, -0.3,  1.8 ]   V = [ 0.7, 0.9, 0.2, 0.8 ]
+prior token    "was"   K = [ 0.1, -0.2,  0.3,  0.2 ]   V = [ 0.0, 0.3, 0.1, 0.0 ]
+```
+
+**Steps 1–2** — score `"it"`'s query against each prior key (dot product, then ÷ √4 = ÷ 2):
+
+```
+score(it, The)  = (1.0*0.2 + 0.5*0.1  + -0.5*0.0  + 2.0*0.1) / 2 = 0.225
+score(it, book) = (1.0*0.9 + 0.5*0.4  + -0.5*-0.3 + 2.0*1.8) / 2 = 2.425   ◄ it & book align
+score(it, was)  = (1.0*0.1 + 0.5*-0.2 + -0.5*0.3  + 2.0*0.2) / 2 = 0.125
+```
+
+**Step 3** — softmax the three scores into attention weights:
+
+```
+softmax([0.225, 2.425, 0.125]) = [ 0.091, 0.826, 0.083 ]
+                                    The    book   was
+```
+
+`"it"` places **83% of its attention on "book"** — it has resolved the reference.
+
+**Step 4** — the output is the weighted sum of the *Value* vectors:
+
+```
+output = 0.091*V(The) + 0.826*V(book) + 0.083*V(was)
+       = [ 0.587, 0.768, 0.192, 0.670 ]      ← again a d_head-length vector
+```
+
+That output — dominated by book's value — is what this head contributes for `"it"`. It's the same
+length as the inputs (`d_head`), so it flows straight back into the pipeline; across all heads
+these outputs concatenate back up to `d_model`.
+
+!!! note "Scale check"
+    Here `d_head = 4` and 3 prior tokens. A real decode step has `d_head ≈ 128` and *thousands* of
+    prior tokens — each contributing a K and a V vector read from the **KV cache**. Identical four
+    steps, just bigger. That "thousands of K/V vectors" is exactly why the KV cache exists and why
+    its size dominates memory.
+
 ### Multi-head attention
 
 So far we've described *one* attention operation over the token's full `d_model`-wide vector. Real
@@ -374,22 +428,33 @@ After the final block, the LM head projects the last token's hidden state to **l
   probabilities: they don't sit between 0 and 1 and they don't sum to 1. Converting them into
   probabilities is a separate step — **softmax** (the same function from inside attention).
 
-**Tiny example.** For a 4-word vocabulary the model might emit logits `[2.5, -1.0, 0.3, 1.2]`. You
-can't read those as percentages. Softmax exponentiates and normalizes them into
-`[0.71, 0.02, 0.08, 0.19]` — *now* they're probabilities (sum to 1), and the token that had logit
-`2.5` is the most likely at 71%. Real vocabularies are 100k+ wide, but the mechanic is identical.
+**A concrete example.** Say the model has just read *"The capital of France is"* and must choose
+the next token. The LM head emits one logit for *every* token in the vocabulary — 100k+ of them —
+but almost all are tiny. Here are the handful that score highest, before and after softmax:
 
 ```
- hidden state ──► LM head (matmul) ──► logits        ──► softmax ──► probabilities
-                                       [ vocab-long ]                [ sums to 1 ]
-   A     →   .0001                         Abs  →  0.5967  →  80%
-   Ab    →   .0004                         Act  →  0.0983  →  12%
-   Abs   →   .5967     ◄── highest          …
-   …                                       next token:  "Abs"
+prompt:  "The capital of France is ___"
+
+ LM head ──► logits ──────────── softmax ──► probability
+   candidate token    logit                   prob
+   " Paris"            6.0        ───────►     86.1%   ◄── highest
+   " Lyon"             3.5        ───────►      7.1%
+   " London"           3.0        ───────►      4.3%
+   " a"                2.0        ───────►      1.6%
+   " the"              1.5        ───────►      1.0%
+   …(99,995 other tokens, each ≈ 0%)…
+        ▲                              ▲
+   raw scores, not                probabilities,
+   probabilities                  summing to 1
 ```
 
-Logits aren't probabilities yet — softmax makes them so. Then a token is **sampled** (a weighted
-random draw). You steer that draw with inference arguments:
+The raw logits mean nothing on their own — softmax exponentiates each and divides by the total, so
+larger logits dominate and the whole 100k-long vector becomes probabilities that sum to 1. The
+model then **samples** from this distribution: a weighted random draw. With `" Paris"` holding 86%
+of the probability mass, that's almost always the token that comes out. Append `" Paris"` to the
+text, feed the whole sequence back in, and the loop predicts the token after that.
+
+You steer that final draw with inference arguments:
 
 | Argument | Acts on | Effect |
 |----------|---------|--------|
