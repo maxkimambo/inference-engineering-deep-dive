@@ -246,6 +246,111 @@ measure it, three ways, always apples-to-apples against the original weights:
     weights-only instead of weights+KV, trade a little speed for a lot less risk. Run all three checks,
     pick the most aggressive setting that still passes your custom eval, and no further.
 
+## Worked example: taking Qwen from BF16 to INT4
+
+Let's run the whole pipeline on a real target: **Qwen2.5-7B**, shipped in **BF16** (16-bit — no model
+is 64-bit), quantized down to **INT4 weights**. This is the most common "shrink it to 4-bit" job, and
+its proper name is **W4A16** — *4-bit weights, 16-bit activations*. The activations stay at 16-bit on
+purpose: the [sensitivity ladder](#what-the-sensitivity-ladder) says weights tolerate quantization best,
+so we crush them and leave everything else alone.
+
+### Step 1 — the math, on eight real weights
+
+Quantization happens per **group** of weights sharing one scale (here a group of 8; production uses
+~128). Take one group from a weight row and quantize it **symmetrically** (zero-point `Z = 0`, standard
+for weights) into signed INT4, whose codes run `[-7, 7]` (qmax = 7):
+
+```
+weights (BF16)  w = [ 0.12, -0.41,  0.93, -0.05,  0.55, -0.88,  0.27,  0.02 ]
+
+1. absmax       = max(|w|)           = 0.93
+2. scale S      = absmax / qmax      = 0.93 / 7   = 0.13286
+3. quantize     q = round(w / S), clamp to [-7, 7]
+                  = [  1,   -3,    7,    0,    4,   -7,    2,    0  ]   ◄ stored as INT4
+4. dequantize   ŵ = q * S
+                  = [0.133, -0.399, 0.93, 0.0, 0.531, -0.93, 0.266, 0.0]
+
+   error  ŵ − w  = [+0.013, +0.011, 0.0, +0.05, −0.019, −0.05, −0.004, −0.02]
+   max abs error = 0.05
+```
+
+What to notice:
+
+- **Each weight is now 4 bits** — an integer in `[-7, 7]` — plus **one shared `S` per group**. That `S`
+  is the per-block scale factor from the [granularity](#granularity-tensor-channel-block-and-microscaling)
+  section, made concrete.
+- **`0.93` is exact** (it set the scale), but `−0.05` rounded all the way to `0` — small values near a
+  big outlier lose the most. That's *precisely* why **group size matters**: a smaller group means a
+  local outlier inflates the scale for fewer neighbors. Halve the group, and `−0.05` might land in a
+  group whose absmax is `0.41`, getting a finer scale and surviving.
+- The errors look tiny, but recall the π-cubing table at the top of this page — across billions of
+  weights and thousands of dependent steps, the recipe's job is to keep them from compounding.
+
+### Step 2 — the payoff
+
+Do that for all of Qwen2.5-7B's ~7.6B weights:
+
+| | Size | Note |
+|---|------|------|
+| BF16 weights | **15.2 GB** | 2 bytes each |
+| INT4 weights | 3.8 GB | 0.5 byte each |
+| + group scales (group=128) | +0.12 GB | one BF16 scale per 128 weights |
+| **Effective INT4** | **≈ 3.9 GB** | **≈ 3.9× smaller** |
+
+A model that needed an 80 GB A100 now fits on a 12 GB consumer GPU — and decode, being memory-bound,
+gets faster because it moves ¼ the weight bytes per token.
+
+### Step 3 — but don't actually use round-to-nearest
+
+The Step 1 math is **round-to-nearest (RTN)** — the simplest scheme, and at INT4 it loses too much
+quality to ship. Real W4A16 uses a smarter **PTQ algorithm** that spends a little calibration compute to
+place the codes better:
+
+- **GPTQ** — quantizes weights one column at a time, using second-order (Hessian) information to
+  **compensate the not-yet-quantized weights** for each rounding error. Minimizes the layer's *output*
+  error, not each weight's error.
+- **AWQ** (Activation-aware Weight Quantization) — notices that a few weight **channels** matter far more
+  (judged by activation magnitude) and **scales those salient channels up** before quantizing, so
+  rounding hurts them less. Often the best quality/speed for INT4.
+
+Both still produce a W4A16 checkpoint; they just choose `q` more cleverly than `round(w/S)`.
+
+### Step 4 — the production recipe
+
+Putting the whole chapter's machinery into an actual workflow:
+
+```
+1. DECIDE THE RECIPE
+   format      INT4 weights, BF16 activations   (W4A16)
+   granularity per-group, group_size = 128       (finer = better quality, more scales)
+   scope       linear-layer weights only;
+               keep embeddings, LM head, and attention in BF16   (sensitivity ladder)
+
+2. CALIBRATE
+   run a few hundred representative samples through the model so the
+   algorithm sees real activation/weight ranges  (GPTQ/AWQ need this)
+
+3. QUANTIZE
+   run AWQ or GPTQ via a tool — llm-compressor, AutoAWQ, or NVIDIA
+   ModelOpt — producing a quantized safetensors (or GGUF for local/llama.cpp)
+
+4. EVALUATE  (§5.1.3, against the original BF16 weights)
+   perplexity delta ≈ noise?   MMLU/your-eval drop ≈ noise?
+   if a custom eval regresses → back off: try INT4→ a microscaling FP4,
+   or quantize fewer layers, or W4A16 → W8A16
+
+5. DEPLOY
+   load the checkpoint on vLLM / SGLang / TensorRT-LLM — they read the
+   quant format and run INT4 Tensor-Core kernels
+```
+
+!!! key "The one-paragraph version"
+    To take Qwen from BF16 to INT4: choose **W4A16, per-group (128), weights-only**; **calibrate** on
+    representative data; run **AWQ or GPTQ** (never plain round-to-nearest at 4-bit); **evaluate** the
+    perplexity/benchmark/custom-eval deltas against the BF16 original; and if quality regresses, **dial
+    back** — a higher-granularity FP4, fewer quantized layers, or 8-bit. You get a ~4× smaller, faster
+    model, and the entire job is managing the quality you trade for it.
+
 ---
 
 Quantization makes every *other* technique cheaper — fewer bytes to cache, transfer, and parallelize.
