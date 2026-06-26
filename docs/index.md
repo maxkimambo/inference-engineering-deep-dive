@@ -4,7 +4,7 @@ hide:
   - toc
 ---
 
-# Inference Engineering — Deep
+# Inference Engineering — Deep Dive
 
 > A from-the-ground-up guide to how generative-model inference *actually* works — and how to make it fast.
 
