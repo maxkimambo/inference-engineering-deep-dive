@@ -74,14 +74,89 @@ behind the queue during a ramp — 0 active replicas would not be.
     traffic* should keep a warm floor. Scale-to-zero is for the [overnight batch
     job](quantization-pipeline-gke.md), not the live chat path.
 
-## 5 — Route and queue (§7.2.3 + Ch 5)
+## 5 — Route and queue: how KV-cache-aware routing actually works (§7.2.3 + Ch 5)
 
-- **KV-cache-aware routing** — a multi-turn conversation re-sends its whole history every turn, so pin
-  each user's turns to the **same replica** to hit the [prefix cache](../techniques/caching.md#531-prefix-caching-and-kv-cache-reuse).
-  Turn 5 then skips prefill on turns 1–4 → far lower TTFT. This is Chapter 5's caching becoming a
-  fleet-level routing decision.
-- **Priority queue** — when a spike outruns the 50 s scale-up, hold requests in a queue; give **paid
-  tenants priority** over free-trial traffic.
+A multi-turn conversation re-sends its whole history every turn, so if turn 5 lands on the replica
+that served turns 1–4, it skips prefill on those turns via the
+[prefix cache](../techniques/caching.md#531-prefix-caching-and-kv-cache-reuse) → far lower TTFT. The
+catch is the part the theory glossed: **a plain Kubernetes `Service` load-balances round-robin and has
+no idea which replica holds which prefix.** Getting the routing right is what makes this real. You have
+three tiers of options.
+
+### First, the two mechanisms
+
+There are two ways to land a conversation's turns on a warm cache:
+
+- **Session affinity (stickiness)** — don't track caches at all; just guarantee every turn of a session
+  hits the **same replica**, by consistent-hashing a session/user id. That replica's *automatic prefix
+  caching* — **vLLM Automatic Prefix Caching** (`--enable-prefix-caching`) or **SGLang RadixAttention** —
+  then reuses the KV for free. Simple and robust; no cache introspection. Downsides: a hot session can
+  imbalance load, and a replica restart loses that session's cache.
+- **True cache-aware routing** — a smart router *tracks* which prefixes live on which replica (KV-cache
+  indexes, utilization, queue depth) and scores replicas per request to maximize prefix overlap *while*
+  balancing load. Higher hit rate and better balance; needs a router that introspects the engines.
+
+### The tools you actually have
+
+| Option | What it is | Effort to hook up |
+|--------|-----------|-------------------|
+| **Sticky sessions (DIY)** | consistent-hash routing at the gateway you already run (Envoy/Istio/NGINX) on a session header | a load-balancer config — minutes |
+| **GKE Inference Gateway** *(recommended here)* | managed, **prefix-cache-aware**; `InferencePool` + **Endpoint Picker**, powered by llm-d, built on the Gateway API Inference Extension[^gie] | install CRDs, wrap your vLLM Deployment in an `InferencePool` |
+| **Engine routers (portable)** | vLLM **production-stack** / **llm-d**, **SGLang router**, or **NVIDIA Dynamo's** KV-aware router | run the router as a Deployment in front of the engine pods |
+
+You almost never write a cache-tracking router from scratch anymore — the bar is "config, not code."
+
+### Wiring it on GKE (this deployment)
+
+Since we're already on GKE, use **GKE Inference Gateway**. The Endpoint Picker (EPP) tracks each
+replica's prefix-cache indexes, KV utilization, and queue depth, and routes each request to the
+best-scoring replica — prefix-aware routing with **no router code from you** (Google reports up to ~96%
+TTFT improvement on prefix-heavy workloads):
+
+1. Run the vLLM replicas as a normal Deployment, with prefix caching on:
+   `args: ["--model", "/models/Qwen2.5-7B-Instruct-W4A16-G128", "--enable-prefix-caching"]`.
+2. Group those pods in an **`InferencePool`** and attach the Endpoint Picker.
+3. Bind your hostname to the pool with an **`HTTPRoute`**. Done — the EPP does the cache-aware scoring.
+
+```yaml
+# group the vLLM pods + attach the cache-aware Endpoint Picker
+apiVersion: inference.networking.x-k8s.io/v1alpha2   # check the GA CRD version in the quickstart
+kind: InferencePool
+metadata: { name: qwen-pool }
+spec:
+  targetPortNumber: 8000
+  selector: { app: qwen-vllm }      # ← the serving Deployment's pods
+  extensionRef: { name: gke-epp }   # ← the Endpoint Picker that scores prefix-cache match
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata: { name: qwen-route }
+spec:
+  parentRefs: [{ name: inference-gateway }]
+  rules:
+    - backendRefs:
+        - group: inference.networking.x-k8s.io
+          kind: InferencePool
+          name: qwen-pool
+```
+
+(Exact CRD `apiVersion`s move fast — follow the GKE Inference Gateway quickstart[^gw] for the current
+manifests.)
+
+!!! tip "When sticky sessions are enough — and when to build your own"
+    If you're **not** on a gateway that supports this, the 80/20 is **DIY sticky sessions**: consistent-hash
+    on a `session-id` header (Istio `DestinationRule` `consistentHash`, or an Envoy hash policy) so a
+    conversation pins to one replica, and let vLLM's automatic prefix caching do the rest. It's minutes
+    of config and captures most of the benefit. **Build your own cache-tracking router only** if you're
+    off Kubernetes or have an exotic policy the EPP can't express — rarely worth it now that llm-d /
+    GKE Inference Gateway exist.
+
+### Queueing
+
+Routing decides *where*; the **queue** decides what happens when every replica is full during the 50 s
+scale-up. Two layers cooperate: each vLLM replica has its own request queue (the EPP reads its depth to
+avoid piling onto a busy replica), and the gateway holds overflow. Configure a **priority queue** so
+**paid tenants jump ahead** of free-trial traffic under load.
 
 ## 6 — Decide dedicated vs API on cost (§7.4.2)
 
@@ -157,3 +232,15 @@ the production machinery of Chapter 7, tuned to one product's traffic and SLA.
 
 To see the *automation* behind a piece of this — building and shipping the quantized model itself —
 work through the [Quantization Pipeline on GKE](quantization-pipeline-gke.md).
+
+[^gie]:
+    GKE Inference Gateway tracks each model server's prefix-cache indexes, KV-cache utilization, and
+    queue depth, scoring servers by longest prefix match while balancing load — built on the
+    [Gateway API Inference Extension](https://github.com/kubernetes-sigs/gateway-api-inference-extension)
+    and llm-d's Endpoint Picker.
+    [About GKE Inference Gateway](https://docs.cloud.google.com/kubernetes-engine/docs/concepts/about-gke-inference-gateway).
+
+[^gw]:
+    [GKE Inference Gateway prefix caching](https://cloud.google.com/blog/products/containers-kubernetes/gke-inference-gateway-prefix-caching-accelerates-ai-inference)
+    (Google Cloud blog) reports up to ~96% TTFT improvement on prefix-heavy workloads; see the product
+    docs for the current `InferencePool` / `HTTPRoute` quickstart manifests.

@@ -134,6 +134,10 @@ one with 10,000 input tokens isn't one with 100. Smart routing uses inference-en
   now a fleet-level concern).
 - **LoRA-aware routing** — send it to a replica that already has the needed LoRA adapter in memory.
 
+For the concrete tools that implement this (sticky sessions, GKE Inference Gateway's
+prefix-cache-aware Endpoint Picker, engine routers) and how to wire them into a cluster, see the
+[worked example, step 5](worked-example.md#5-route-and-queue-how-kv-cache-aware-routing-actually-works-723-ch-5).
+
 ### Queueing
 
 Routing and balancing aren't enough: when traffic exceeds capacity, requests need somewhere to
