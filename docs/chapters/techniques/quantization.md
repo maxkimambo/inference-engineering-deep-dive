@@ -351,23 +351,53 @@ Putting the whole chapter's machinery into an actual workflow:
     back** — a higher-granularity FP4, fewer quantized layers, or 8-bit. You get a ~4× smaller, faster
     model, and the entire job is managing the quality you trade for it.
 
-## Hands-on: quantizing Qwen with `llm-compressor`
+## Hands-on: quantizing Qwen on Google Cloud with `llm-compressor`
 
 Here is the recipe above as runnable code. We use **`llm-compressor`** — the vLLM-native quantization
 library — because its output loads straight into vLLM/SGLang and its layer-targeting is exactly the
-control you want.[^llmc]
+control you want.[^llmc] Quantization is a one-off batch job, so we run it on an ephemeral
+**Compute Engine** GPU VM and stash the result in **Cloud Storage** — no local GPU required.
 
-!!! warning "This runs on a GPU box, not your laptop"
-    Quantizing 7B needs a CUDA GPU (~24 GB) and downloads the BF16 weights (~15 GB) first. The code is
-    correct against the current `llm-compressor` API; run it where there's a GPU.
+!!! info "What you need on Google Cloud"
+    A project with **GPU quota** in your target region (request `NVIDIA L4 GPUs` quota if you have
+    none), the `gcloud` CLI authenticated (`gcloud auth login`), and a Cloud Storage bucket for the
+    output. Quantizing 7B fits on a single **L4 (24 GB)**; the job runs ~20–60 min, so the VM costs
+    roughly **$1–2** — *delete it when done* (step 4).
 
-### Install
+### 1 — Provision a GPU VM
+
+A **Deep Learning VM** image ships with CUDA and the NVIDIA driver, so there's nothing to install at
+the system level:
 
 ```bash
-pip install llmcompressor   # pulls in transformers, datasets, compressed-tensors
+gcloud compute instances create qwen-quant \
+  --zone=europe-west4-a \                       # NL region — good L4/A100 stock, close to DE
+  --machine-type=g2-standard-8 \                # the L4 GPU family
+  --accelerator=type=nvidia-l4,count=1 \
+  --provisioning-model=SPOT \                   # ~60–70% cheaper for a throwaway job
+  --maintenance-policy=TERMINATE \
+  --image-family=common-cu124 \
+  --image-project=deeplearning-platform-release \
+  --metadata="install-nvidia-driver=True" \
+  --boot-disk-size=200GB                        # room for BF16 weights + output checkpoint
 ```
 
-### The minimal full script
+For bigger models, step up the accelerator: `a2-highgpu-1g` (A100 40 GB) or an `a3` machine (H100).
+
+### 2 — SSH in and install the library
+
+```bash
+gcloud compute ssh qwen-quant --zone=europe-west4-a
+
+# on the VM — driver and CUDA are already present from the image:
+nvidia-smi                     # confirm the L4 is visible
+pip install llmcompressor      # pulls in transformers, datasets, compressed-tensors
+```
+
+### 3 — The quantization script
+
+Run this on the VM (the BF16 weights download from Hugging Face on first call — fast over Google
+Cloud's network):
 
 ```python
 from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -491,16 +521,37 @@ recipe = AWQModifier(targets="Linear", scheme="W4A16", ignore=["lm_head"])
 # ...identical oneshot(...) and save_pretrained(...)
 ```
 
-### Run it on vLLM
+### 4 — Save to Cloud Storage and tear down
 
-The compressed checkpoint needs no special flags — vLLM detects the quantization from the saved config:
+Push the ~3.9 GB checkpoint to a bucket so it outlives the VM, then **delete the instance** — a
+forgotten GPU VM is the classic surprise bill:
 
 ```bash
+# on the VM — copy the output checkpoint to your bucket
+gcloud storage cp -r ./Qwen2.5-7B-Instruct-W4A16-G128 gs://YOUR_BUCKET/models/
+
+# back on your laptop — delete the GPU VM (stops all billing for it)
+gcloud compute instances delete qwen-quant --zone=europe-west4-a --quiet
+```
+
+### 5 — Serve on vLLM
+
+Serve from any GPU instance (a smaller one — INT4 needs ~¼ the VRAM). Pull the checkpoint from the
+bucket; vLLM needs no special flags, it detects the quantization from the saved config:
+
+```bash
+gcloud storage cp -r gs://YOUR_BUCKET/models/Qwen2.5-7B-Instruct-W4A16-G128 .
 vllm serve ./Qwen2.5-7B-Instruct-W4A16-G128
 ```
 
 Then evaluate (§5.1.3): compare perplexity and your custom eval against the original `Qwen2.5-7B-Instruct`.
 If it passes, you've got a ~4× smaller model serving on a quarter of the VRAM.
+
+!!! tip "Productionizing the job"
+    For a *repeatable* quantization pipeline (new model versions, scheduled re-quantizes), wrap the
+    step-3 script in a **Vertex AI custom job** or a container on a GPU node pool instead of a hand-run
+    VM — same code, but provisioning and teardown are managed for you and the output lands in the bucket
+    automatically.
 
 ---
 
