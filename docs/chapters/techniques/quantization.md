@@ -351,6 +351,157 @@ Putting the whole chapter's machinery into an actual workflow:
     back** — a higher-granularity FP4, fewer quantized layers, or 8-bit. You get a ~4× smaller, faster
     model, and the entire job is managing the quality you trade for it.
 
+## Hands-on: quantizing Qwen with `llm-compressor`
+
+Here is the recipe above as runnable code. We use **`llm-compressor`** — the vLLM-native quantization
+library — because its output loads straight into vLLM/SGLang and its layer-targeting is exactly the
+control you want.[^llmc]
+
+!!! warning "This runs on a GPU box, not your laptop"
+    Quantizing 7B needs a CUDA GPU (~24 GB) and downloads the BF16 weights (~15 GB) first. The code is
+    correct against the current `llm-compressor` API; run it where there's a GPU.
+
+### Install
+
+```bash
+pip install llmcompressor   # pulls in transformers, datasets, compressed-tensors
+```
+
+### The minimal full script
+
+```python
+from transformers import AutoModelForCausalLM, AutoTokenizer
+from llmcompressor import oneshot
+from llmcompressor.modifiers.gptq import GPTQModifier
+
+MODEL_ID = "Qwen/Qwen2.5-7B-Instruct"
+
+model = AutoModelForCausalLM.from_pretrained(MODEL_ID, dtype="auto")   # (1)
+tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
+
+recipe = GPTQModifier(            # (2)
+    targets="Linear",             # which modules to quantize
+    scheme="W4A16",               # 4-bit weights, 16-bit activations, group_size 128
+    ignore=["lm_head"],           # which modules to SKIP
+)
+
+oneshot(
+    model=model,
+    dataset="HuggingFaceH4/ultrachat_200k",   # (3) calibration data
+    recipe=recipe,
+    max_seq_length=2048,
+    num_calibration_samples=512,              # 256–512 is plenty; more = slower
+)
+
+SAVE_DIR = "Qwen2.5-7B-Instruct-W4A16-G128"
+model.save_pretrained(SAVE_DIR, save_compressed=True)   # (4)
+tokenizer.save_pretrained(SAVE_DIR)
+```
+
+1. `dtype="auto"` loads the model in its native BF16.
+2. `GPTQModifier` is the smart PTQ from Step 3 — not round-to-nearest. Swap one import to use AWQ
+   instead (below).
+3. Calibration: a few hundred samples so GPTQ measures real value ranges. **Use domain-matched data**
+   — for a code model, calibrate on code, not chat.
+4. `save_compressed=True` writes the packed 4-bit checkpoint; vLLM reads it directly.
+
+That's the whole thing. The interesting part — and what you asked for — is the `targets`/`ignore`
+control.
+
+### Targeting different layers
+
+`targets` says *what to quantize*; `ignore` says *what to leave in BF16*. Both accept module **class
+names**, exact **module paths**, or **regex** with a `re:` prefix. This is how you walk the [sensitivity
+ladder](#what-the-sensitivity-ladder) in practice — quantize the robust layers hard, protect the
+sensitive ones.
+
+First, know Qwen's module paths (printable with `print(model)`):
+
+```
+model.embed_tokens                      ← input embedding   (sensitive)
+model.layers.{0..27}.self_attn.q_proj   ← attention projections
+                     .self_attn.k_proj
+                     .self_attn.v_proj
+                     .self_attn.o_proj
+model.layers.{0..27}.mlp.gate_proj      ← MLP / FFN  (biggest, most robust)
+                     .mlp.up_proj
+                     .mlp.down_proj
+lm_head                                 ← output head       (sensitive)
+```
+
+Now, recipes from least to most conservative:
+
+=== "Default (skip the head)"
+
+    ```python
+    GPTQModifier(targets="Linear", scheme="W4A16",
+                 ignore=["lm_head"])
+    ```
+    Quantize every Linear, keep only the output head in BF16. The standard starting point.
+
+=== "Protect the edge layers"
+
+    ```python
+    GPTQModifier(targets="Linear", scheme="W4A16",
+                 ignore=["lm_head",
+                         "re:model\\.layers\\.(0|1|26|27)\\..*"])  # first 2 + last 2
+    ```
+    Early and late layers are more sensitive (page §5.1.2). Leave the first two and last two
+    transformer blocks in BF16, quantize the middle 24. Costs a little memory, recovers quality.
+
+=== "MLP-only (skip attention)"
+
+    ```python
+    GPTQModifier(targets="Linear", scheme="W4A16",
+                 ignore=["lm_head", "re:.*self_attn.*"])  # only MLP Linears quantized
+    ```
+    Attention is the most sensitive component. Quantize just the big, robust MLP projections and leave
+    all attention projections in BF16 — most of the size win, least of the risk.
+
+=== "Spare a known-sensitive projection"
+
+    ```python
+    GPTQModifier(targets="Linear", scheme="W4A16",
+                 ignore=["lm_head", "re:.*down_proj"])  # down_proj often sensitive
+    ```
+    The MLP `down_proj` frequently carries outliers and degrades worst under 4-bit. Skip just that one
+    projection across all layers.
+
+!!! key "The targeting workflow"
+    Start with **default**, run your evals (§5.1.3). If quality regresses, don't abandon 4-bit — **add
+    the regression's likely culprits to `ignore`** and re-run: edge layers, then attention, then
+    `down_proj`. You're searching for the smallest set of BF16 exceptions that recovers quality, which
+    is mixed-precision quantization done by hand. Each module you move to `ignore` costs a little memory
+    and buys a little quality.
+
+!!! info "Memory tip for big models"
+    Add `sequential_targets=["Qwen2DecoderLayer"]` to the modifier to quantize **one decoder layer at a
+    time**, keeping only that layer's activations in memory. Essential when the model barely fits —
+    it's how the same recipe scales from 7B to 70B+.
+
+### Use AWQ instead (one import)
+
+AWQ often edges out GPTQ at 4-bit (it protects salient channels — Step 3). Same call, different
+modifier:
+
+```python
+from llmcompressor.modifiers.awq import AWQModifier
+
+recipe = AWQModifier(targets="Linear", scheme="W4A16", ignore=["lm_head"])
+# ...identical oneshot(...) and save_pretrained(...)
+```
+
+### Run it on vLLM
+
+The compressed checkpoint needs no special flags — vLLM detects the quantization from the saved config:
+
+```bash
+vllm serve ./Qwen2.5-7B-Instruct-W4A16-G128
+```
+
+Then evaluate (§5.1.3): compare perplexity and your custom eval against the original `Qwen2.5-7B-Instruct`.
+If it passes, you've got a ~4× smaller model serving on a quarter of the VRAM.
+
 ---
 
 Quantization makes every *other* technique cheaper — fewer bytes to cache, transfer, and parallelize.
