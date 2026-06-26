@@ -119,3 +119,4 @@ nav:
       - chapters/modalities/index.md
   - "7 · Production":
       - chapters/production/index.md
+      - Hands-on - Quantization Pipeline on GKE: chapters/production/quantization-pipeline-gke.md

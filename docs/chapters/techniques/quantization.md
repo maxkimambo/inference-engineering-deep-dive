@@ -548,10 +548,10 @@ Then evaluate (§5.1.3): compare perplexity and your custom eval against the ori
 If it passes, you've got a ~4× smaller model serving on a quarter of the VRAM.
 
 !!! tip "Productionizing the job"
-    For a *repeatable* quantization pipeline (new model versions, scheduled re-quantizes), wrap the
-    step-3 script in a **Vertex AI custom job** or a container on a GPU node pool instead of a hand-run
-    VM — same code, but provisioning and teardown are managed for you and the output lands in the bucket
-    automatically.
+    The hand-run VM above is fine for a one-off. For a *repeatable* pipeline — new model versions,
+    scheduled re-quantizes, your whole model catalog — you want this as an automated, scale-to-zero
+    batch job on Kubernetes. That's a full hands-on of its own:
+    [**Chapter 7 → A Quantization Pipeline on GKE**](../production/quantization-pipeline-gke.md).
 
 ---
 
