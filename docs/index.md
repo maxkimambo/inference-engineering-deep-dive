@@ -59,6 +59,7 @@ worked example. It is long on purpose.
 | 5 | [Techniques](chapters/techniques/index.md) | Quantize, cache, speculate, and parallelize on purpose |
 | 6 | [Modalities](chapters/modalities/index.md) | Apply the techniques to vision, audio, and embeddings |
 | 7 | [Production](chapters/production/index.md) | Scale, deploy, and observe a real serving system |
+| 8 | [Infrastructure](chapters/infrastructure/index.md) | Build the GPU platform hands-on: K8s, GPU scheduling, IaC, multi-cloud |
 
 !!! note "Status"
     This is still work in progress chapters are being added.

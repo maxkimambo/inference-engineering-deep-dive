@@ -132,3 +132,11 @@ nav:
       - Client Code: chapters/production/client-code.md
       - Putting It Together (worked example): chapters/production/worked-example.md
       - Hands-on - Quantization Pipeline on GKE: chapters/production/quantization-pipeline-gke.md
+  - "8 · Infrastructure":
+      - chapters/infrastructure/index.md
+      - Kubernetes for ML: chapters/infrastructure/kubernetes-for-ml.md
+      - GPU Scheduling & Resources: chapters/infrastructure/gpu-scheduling.md
+      - Infrastructure as Code: chapters/infrastructure/infrastructure-as-code.md
+      - Orchestration Patterns: chapters/infrastructure/orchestration-patterns.md
+      - Multi-Cloud Strategies: chapters/infrastructure/multi-cloud.md
+      - "Hands-on: GPU Platform on GKE": chapters/infrastructure/hands-on-gke-platform.md
