@@ -285,9 +285,10 @@ You then deploy a `MultiClusterService` (exports the `qwen` Service across the f
 `MultiClusterGateway` (one global anycast IP, health-checked). Requests land on a healthy cluster
 *with GPU headroom*; when one region is out of L4 capacity or down, traffic shifts to the other —
 the **active–passive failover** of § 8.5, with the passive side scaled to zero so insurance is nearly
-free. Extending to a *second cloud* swaps the global front door for a cloud-neutral one (a global LB
-or DNS failover) and keeps each model instance whole within its cloud — never split across the slow
-cross-cloud wire.
+free. This is the *same-cloud, multi-region* path. For a true **second cloud**, swap the GCP-only
+Gateway for a cloud-neutral front door — exactly the **GCP + Scaleway + Cloudflare Load Balancing**
+build walked through in § 8.5's *Try it* — keeping each model instance whole within its cloud, never
+split across the slow cross-cloud wire.
 
 !!! note "Why Step 5 is lighter than the rest"
     Cross-cloud failover is genuinely more setup than one lab should run end-to-end, and most teams

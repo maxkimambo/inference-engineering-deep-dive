@@ -84,44 +84,113 @@ you GPU-outage insurance for close to the cost of the primary alone.
     NVLink — will dominate. Multi-cloud is a *replication and routing* strategy, never a *parallelism*
     strategy.
 
-## Try it: one manifest, two "clouds" (free, no cloud)
+## Try it: split real traffic across GCP and Scaleway
 
-The claim that "your workload is portable, the substrate isn't" is something you can *prove* locally.
-Stand up two `kind` clusters as stand-ins for two clouds and deploy the **identical** manifest to
-both — then switch context the way a global load balancer would shift traffic:
+Time to make this concrete on two *actual* clouds — GKE on Google Cloud and **Kapsule** on
+**Scaleway** (a European provider, handy for EU data residency) — with **Cloudflare Load Balancing**
+as the cloud-neutral front door splitting live traffic between them. This is the real architecture,
+and it runs on the stack you already have (`kimambo.de` is on Cloudflare). It builds on the GKE lab
+cluster from § 8.6.
+
+!!! warning "Real clouds, real money"
+    This spins up a GPU node on Scaleway too, and Cloudflare Load Balancing is a paid add-on
+    (~\$5/mo + usage). Keep both GPU pools at `min=0`, and run the teardown at the end. A full run is a
+    few euros.
+
+**1. Stand up the second cloud — same workload, different substrate.** Kapsule auto-installs the
+NVIDIA GPU Operator on any GPU pool (the same device-plugin + driver stack GKE gave you in § 8.2), so
+the *workload* is unchanged — only the Terraform/CLI that builds the cluster differs:
 
 ```bash
-kind create cluster --name cloud-a
-kind create cluster --name cloud-b
+# Scaleway: cluster + an L4 GPU pool that scales to zero (mirrors the GKE pool)
+scw k8s cluster create name=infra-lab-scw version=$(scw k8s version list -o json | jq -r '.[0].name') \
+  cni=cilium region=fr-par
+CID=$(scw k8s cluster list name=infra-lab-scw -o json | jq -r '.[0].id')
+scw k8s pool create cluster-id=$CID name=l4 node-type=L4-1-24G \
+  size=1 min-size=0 max-size=2 autoscaling=true   # L4-1-24G = 1× NVIDIA L4
+scw k8s kubeconfig install $CID                    # adds the Scaleway context
 
-cat > app.yaml <<'EOF'
-apiVersion: apps/v1
-kind: Deployment
-metadata: { name: model }
-spec:
-  replicas: 2
-  selector: { matchLabels: { app: model } }
-  template:
-    metadata: { labels: { app: model } }
-    spec: { containers: [{ name: c, image: nginx }] }   # stands in for the model server
-EOF
-
-# SAME yaml, both 'clouds' — this is the portability multi-cloud relies on
-for ctx in kind-cloud-a kind-cloud-b; do
-  kubectl --context "$ctx" apply -f app.yaml
-done
-kubectl --context kind-cloud-a get deploy model   # serving here…
-kubectl --context kind-cloud-b get deploy model   # …and here, unchanged
-
-# 'Fail over': drain cloud-a, traffic would shift to cloud-b
-kubectl --context kind-cloud-a scale deploy model --replicas=0
-
-kind delete cluster --name cloud-a; kind delete cluster --name cloud-b
+# Deploy the IDENTICAL vllm.yaml from § 8.6 Step 3 — not one line changes
+kubectl --context infra-lab-scw apply -f vllm.yaml
+# Expose it: a LoadBalancer Service → Scaleway CCM provisions an external IP
+kubectl --context infra-lab-scw expose deployment qwen --type=LoadBalancer \
+  --port 80 --target-port 8000 --name qwen-lb
+SCW_IP=$(kubectl --context infra-lab-scw get svc qwen-lb \
+  -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
 ```
 
-The same `model` Deployment ran on two independent clusters with zero per-"cloud" changes — and a
-front door would simply route to whichever is healthy. That's the whole portability thesis of § 8.5,
-made concrete: **portable workload, separate substrate, capacity-aware routing.**
+Each cloud pulls its *own* copy of the weights from Hugging Face — the **data-gravity** rule in
+action: you replicate weights per cloud, you don't stream them across the gap.
+
+**2. Expose the GKE side the same way** and grab its IP:
+
+```bash
+kubectl --context gke_${PROJECT_ID}_${REGION}_infra-lab expose deployment qwen \
+  --type=LoadBalancer --port 80 --target-port 8000 --name qwen-lb
+GCP_IP=$(kubectl --context gke_${PROJECT_ID}_${REGION}_infra-lab get svc qwen-lb \
+  -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+```
+
+**3. Put Cloudflare in front and split the traffic.** Create one **health monitor**, two **origin
+pools** (one per cloud), and a **load balancer** on a hostname, with weighted steering. In Terraform
+(on-theme with § 8.3 — or click the same shapes in *Cloudflare → Traffic → Load Balancing*):
+
+```hcl
+resource "cloudflare_load_balancer_monitor" "health" {
+  account_id = var.cf_account_id
+  type = "http"; method = "GET"; path = "/health"; expected_codes = "200"
+  interval = 15; retries = 2; timeout = 5      # marks a cloud down fast
+}
+resource "cloudflare_load_balancer_pool" "gcp" {
+  account_id = var.cf_account_id; name = "gcp-gke"
+  monitor = cloudflare_load_balancer_monitor.health.id
+  origins { name = "gke"; address = var.gcp_ip; enabled = true }
+}
+resource "cloudflare_load_balancer_pool" "scaleway" {
+  account_id = var.cf_account_id; name = "scaleway-kapsule"
+  monitor = cloudflare_load_balancer_monitor.health.id
+  origins { name = "kapsule"; address = var.scw_ip; enabled = true }
+}
+resource "cloudflare_load_balancer" "infer" {
+  zone_id = var.cf_zone_id; name = "infer.kimambo.de"
+  default_pool_ids = [cloudflare_load_balancer_pool.gcp.id,
+                      cloudflare_load_balancer_pool.scaleway.id]
+  fallback_pool_id = cloudflare_load_balancer_pool.gcp.id
+  steering_policy  = "random"                   # weighted split across pools
+  random_steering { pool_weights = {
+    (cloudflare_load_balancer_pool.gcp.id)      = 0.7   # 70% GCP
+    (cloudflare_load_balancer_pool.scaleway.id) = 0.3   # 30% Scaleway
+  } }
+}
+```
+
+**4. Watch the split — and the failover.** Hit the hostname in a loop; responses now come from
+*both* clouds in roughly 70/30 proportion. Then break one cloud and watch Cloudflare's health monitor
+drain it within ~30 s, shifting **all** traffic to the survivor — active-active turning into automatic
+failover, no human in the loop:
+
+```bash
+for i in $(seq 20); do curl -s https://infer.kimambo.de/v1/models | jq -r '.data[0].id'; done
+# now kill GCP's serving side; health checks fail; traffic moves 100% to Scaleway
+kubectl --context gke_${PROJECT_ID}_${REGION}_infra-lab scale deployment qwen --replicas=0
+for i in $(seq 20); do curl -s -o /dev/null -w '%{http_code}\n' https://infer.kimambo.de/v1/chat/completions \
+  -d '{"model":"Qwen/Qwen2.5-7B-Instruct","messages":[{"role":"user","content":"hi"}]}'; done
+# still 200s — Scaleway absorbed it
+```
+
+You just ran one model across two clouds behind a single hostname, with weighted distribution and
+health-based failover — the § 8.5 thesis end to end: **portable workload, per-cloud substrate,
+capacity-aware global routing.** Swap the weights to do cost arbitrage (more traffic to whichever
+cloud is cheaper that month), or set Scaleway's weight to 0 for cheap active-passive insurance.
+
+**Tear down:**
+
+```bash
+kubectl --context infra-lab-scw delete svc qwen-lb
+kubectl --context gke_${PROJECT_ID}_${REGION}_infra-lab delete svc qwen-lb
+scw k8s cluster delete cluster-id=$CID with-additional-resources=true
+terraform destroy   # removes the Cloudflare LB, pools, and monitor
+```
 
 ---
 
