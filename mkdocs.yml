@@ -10,8 +10,8 @@ theme:
   name: material
   language: en
   features:
-    - navigation.tabs
-    - navigation.sections
+    # Chapters live in the collapsible left sidebar, not a horizontal tab bar:
+    # with 10+ chapters, Material's navigation.tabs overflows and clips the viewport.
     - navigation.top
     - navigation.indexes
     - navigation.tracking

@@ -41,9 +41,11 @@ worked example. It is long on purpose.
     Chapters 5–6 are the techniques (quantization, speculative decoding, caching, parallelism)
     and the modalities (vision, audio, embeddings) where they're applied.
 
--   :material-rocket-launch: __Then production__
+-   :material-rocket-launch: __Then production & platform__
 
-    Chapter 7 is autoscaling, cold starts, multi-cloud capacity, and observability.
+    Chapter 7 is autoscaling, cold starts, multi-cloud capacity, and observability. Chapter 8 builds
+    the GPU platform underneath it — Kubernetes, GPU scheduling, infrastructure as code, and
+    multi-cloud — hands-on.
 
 </div>
 
