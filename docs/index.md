@@ -22,46 +22,23 @@ worked example. It is long on purpose.
     the open, going deeper on the points other guides skip, and sharing the learnings so they're
     useful to anyone else chasing the same understanding. — Max
 
-## How to read this
-
-<div class="grid cards" markdown>
-
--   :material-numeric-0-box: __Foundations first__
-
-    Chapters 0–2 build the mental furniture: what inference is, the prerequisites, and the
-    mechanics of a forward pass. Read these top-to-bottom.
-
--   :material-chip: __Then the machine__
-
-    Chapters 3–4 cover the hardware (GPUs, memory hierarchy) and the software stack (CUDA,
-    inference engines) that run the math.
-
--   :material-tune: __Then the craft__
-
-    Chapters 5–6 are the techniques (quantization, speculative decoding, caching, parallelism)
-    and the modalities (vision, audio, embeddings) where they're applied.
-
--   :material-rocket-launch: __Then production & platform__
-
-    Chapter 7 is autoscaling, cold starts, multi-cloud capacity, and observability. Chapter 8 builds
-    the GPU platform underneath it — Kubernetes, GPU scheduling, infrastructure as code, and
-    multi-cloud — hands-on.
-
-</div>
-
 ## The map
 
-| # | Chapter | What you'll be able to do |
-|---|---------|---------------------------|
-| 0 | [Inference](chapters/inference/index.md) | Frame the problem: training vs inference, latency vs throughput |
-| 1 | [Prerequisites](chapters/prerequisites/index.md) | Pick a model, define your latency budget, measure it honestly |
-| 2 | [Models](chapters/models/index.md) | Trace a token through a transformer; find the bottleneck |
-| 3 | [Hardware](chapters/hardware/index.md) | Read a GPU spec sheet and predict performance |
-| 4 | [Software](chapters/software/index.md) | Choose and reason about an inference engine |
-| 5 | [Techniques](chapters/techniques/index.md) | Quantize, cache, speculate, and parallelize on purpose |
-| 6 | [Modalities](chapters/modalities/index.md) | Apply the techniques to vision, audio, and embeddings |
-| 7 | [Production](chapters/production/index.md) | Scale, deploy, and observe a real serving system |
-| 8 | [Infrastructure](chapters/infrastructure/index.md) | Build the GPU platform hands-on: K8s, GPU scheduling, IaC, multi-cloud |
+Read in order — it's bottom-up, and each chapter builds on the last. Every ML-specific term is
+defined where it first appears. Each row is what the chapter covers and the concrete skill you walk
+away with.
+
+| # | Chapter | What it covers — and what you'll be able to do |
+|---|---------|------------------------------------------------|
+| 0 | [Inference](chapters/inference/index.md) | What inference *is*, training vs inference, latency vs throughput. **Gain:** frame a workload and state its goal in the right terms. |
+| 1 | [Prerequisites](chapters/prerequisites/index.md) | Choosing a model and defining a latency budget (TTFT, tokens/sec). **Gain:** pick a model and set + measure an honest budget. |
+| 2 | [Models](chapters/models/index.md) | A token's journey through a transformer — attention, the KV cache, prefill vs decode, the roofline. **Gain:** trace a token end-to-end and *prove* where a workload is bottlenecked. |
+| 3 | [Hardware](chapters/hardware/index.md) | GPU anatomy (SMs, Tensor Cores), the memory hierarchy, compute & number formats, interconnect. **Gain:** read a spec sheet and predict fit, decode speed, and cost — then choose a GPU. |
+| 4 | [Software](chapters/software/index.md) | The CUDA stack and the inference engines (vLLM, TensorRT-LLM) that drive the hardware. **Gain:** choose and reason about an inference engine. |
+| 5 | [Techniques](chapters/techniques/index.md) | Quantization, speculative decoding, caching, parallelism, disaggregation. **Gain:** move a workload along the roofline on purpose and pick TP/EP/PP with intent. |
+| 6 | [Modalities](chapters/modalities/index.md) | Applying the inference toolkit to vision, audio, and embeddings. **Gain:** carry the reasoning across modalities. |
+| 7 | [Production](chapters/production/index.md) | Containerization, autoscaling, cold starts, multi-cloud capacity, deployment, observability. **Gain:** scale, deploy, and observe a real serving system. |
+| 8 | [Infrastructure](chapters/infrastructure/index.md) | Kubernetes for ML, GPU scheduling, infrastructure as code, orchestration, multi-cloud — hands-on. **Gain:** build the GPU platform — schedule GPUs, declare clusters as code, serve with scale-to-zero and failover. |
 
 !!! note "Status"
     This is still work in progress chapters are being added.
