@@ -100,6 +100,26 @@ continuous:  step1 [A B C D]    step2 [A B C D]    step3 [E B C D]  ← A finish
              step4 [E B F D] ...   slots refill the instant they free; GPU never drains
 ```
 
+A concrete trace makes it click. Take three requests with different prompt and output lengths — **A**
+(4-token prompt, 3 out), **B** (6-token prompt, 5 out), **C** (2-token prompt, 2 out) — sharing one
+GPU. Each pass reads the weights *once* and advances every **active** lane by one token; a lane that
+hits its limit finishes and frees its KV cache and its slot, without disturbing the others:
+
+```
+pass       lane A (own KV)   lane B (own KV)   lane C (own KV)   weights
+─────────  ───────────────   ───────────────   ───────────────   ───────
+prefill    gen 1   KV  5     gen 1   KV  7     gen 1   KV  3     read 1×
+decode 1   gen 2   KV  6     gen 2   KV  8     gen 2   KV  4 ✔   read 1×
+decode 2   gen 3   KV  7 ✔   gen 3   KV  9      — slot free —    read 1×
+decode 3    — done —         gen 4   KV 10      — done —         read 1×
+decode 4    — done —         gen 5   KV 11 ✔    — done —         read 1×
+```
+
+C finishes first and frees its slot mid-flight; A finishes next; B runs on alone — and at no point did
+any lane read another's tokens or KV cache. The batch is simply *who is in this pass*, and that
+membership changes every step. (`✔` = hit its token limit; `KV` counts prompt + generated tokens, the
+private cache each lane carries until it's done.)
+
 !!! key "Continuous batching is the baseline, not an optimization you add"
     Turning it off is the unusual choice. It's why a single GPU can sustain dozens of concurrent users
     at a stable token rate, and why "throughput at batch 1" benchmarks are meaningless for real
