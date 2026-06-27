@@ -119,6 +119,7 @@ nav:
       - chapters/software/index.md
   - "5 · Techniques":
       - chapters/techniques/index.md
+      - Batching: chapters/techniques/batching.md
       - Quantization: chapters/techniques/quantization.md
       - Speculative Decoding: chapters/techniques/speculative-decoding.md
       - Caching: chapters/techniques/caching.md

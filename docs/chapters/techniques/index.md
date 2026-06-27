@@ -17,10 +17,14 @@ A second principle stacks on top: **the more traffic you have, the more techniqu
 parallelism, KV-aware routing, and disaggregation only earn their complexity at volume — many GPUs,
 often many nodes, serving one model. At low traffic they're overhead.
 
-## The five categories
+## The foundation, and the five categories
+
+Everything below assumes one technique that isn't really optional — **batching** — so the chapter
+starts there, then layers five optimizations on top:
 
 | § | Technique | What it attacks | Lossy? |
 |---|-----------|-----------------|--------|
+| [5.0](batching.md) | **Batching** *(foundation)* | idle GPU on memory-bound decode → throughput | no |
 | [5.1](quantization.md) | **Quantization** | bytes per weight/value → both phases faster | yes (managed) |
 | [5.2](speculative-decoding.md) | **Speculative decoding** | decode's idle compute → higher TPS | no |
 | [5.3](caching.md) | **Caching** | redundant prefill → lower TTFT | no |
@@ -41,6 +45,7 @@ domain and can't risk *any* output change, you still have four of five tools ava
 
 By the end of this chapter you can:
 
+- [x] Explain how continuous batching works, why it never tangles requests' KV caches, and how to size it to an SLO
 - [x] Read a number format (`E4M3`, `MXFP8`, `INT4`) and explain its dynamic-range/precision trade
 - [x] Order model components by quantization sensitivity and justify the order
 - [x] Explain why speculative decoding raises TPS but never TTFT, and what caps its benefit
