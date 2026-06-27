@@ -235,6 +235,56 @@ terraform destroy   # removes the Cloudflare LB, pools, and monitor
 # if you built the Google ALB path instead, delete its url-map, backend-services, and scw-neg too
 ```
 
+## Keeping a conversation on its cluster (cache affinity)
+
+The weighted split has a hidden cost the moment you care about **prefix caching** (Chapter 5, § 5.3):
+a stateless 70/30 split routes *each request independently*, so turn 2 of a conversation can land on
+the *other* cloud — where none of turn 1's KV cache exists. The new cluster must **cold re-prefill the
+entire history**, the exact work prefix caching exists to skip. Load-spreading and cache-locality pull
+against each other, and a naive front door silently picks spreading.
+
+The fix is **two-tier routing**, the same shape whether your clusters sit in two regions or two clouds:
+
+!!! key "Pin the conversation to a cluster, then route to the replica inside it"
+    - **Tier 1 — global front door: session affinity.** Pin each *conversation* (not each request) to
+      one cloud, keyed on a **session/conversation id**, not raw client IP (coarse, and broken behind
+      mobile NAT). New conversations still obey the weighted split; existing ones stick.
+    - **Tier 2 — in-cluster: KV-cache-aware routing.** Affinity gets the request to the right
+      *cluster*; a cache-aware router inside it (GKE Inference Gateway's InferencePool + Endpoint
+      Picker — Chapter 7's worked example) gets it to the right *replica* that holds the prefix.
+
+    Coarse, cheap stickiness globally; fine, prefix-level routing locally, where the KV cache lives.
+
+Pin by a session header you control. With **Cloudflare**, affinity spans the LB's pools (your two
+clouds) directly:
+
+```hcl
+resource "cloudflare_load_balancer" "infer" {
+  # ...pools + weighted steering as before...
+  session_affinity     = "header"
+  session_affinity_ttl = 1800                                  # 30 min
+  session_affinity_attributes { headers = ["X-Session-Id"] }   # by conversation, not IP
+}
+```
+
+With the **Google ALB**, make the same-session→same-cloud mapping deterministic with **consistent
+hashing** on the header (`--session-affinity=HEADER_FIELD`, locality policy `RING_HASH`/`MAGLEV`,
+`consistentHash.httpHeaderName: X-Session-Id`) — so a session always hashes to the same backend, and
+rebalancing disturbs only a *fraction* of sessions instead of all of them.
+
+!!! key "KV cache is a latency optimization, not correctness state"
+    If affinity ever breaks — a cloud fails over, the cookie expires, you drain a hot cluster — the
+    worst case is **one slow turn**: the new cluster cold-prefills the history, then runs warm again.
+    You never get a *wrong* answer, only a briefly slower one. So you don't need perfect stickiness;
+    you tune affinity *strength* (TTL, hash) against load-balancing *freedom*, knowing a miss is
+    bounded and self-healing. This is what makes the whole split safe to run.
+
+It's also why you **don't replicate the KV cache across the cross-cloud wire** (§ 8.5 data gravity;
+Chapter 3, § 3.4): shipping gigabytes of KV between clouds to save a cache hit costs far more than the
+re-prefill it avoids. Affinity buys reuse *within* a cloud; a failover pays one cold prefill and
+re-warms locally. In multi-cloud, **sticky-by-session globally + cache-aware-within-cluster** is the
+whole game.
+
 ---
 
 That completes the platform's concepts: schedule GPUs, declare the cluster, orchestrate the server,
