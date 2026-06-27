@@ -71,36 +71,3 @@ revenue from good answers also compounds.
     recomputed; the right hardware and rung (Chapters 3, 8, 9) lower the dollar in the denominator.
     When you evaluate any optimization, reduce it to this fraction and ask which part it moves and what
     it costs the others.
-
-## Try it: price your own deployment
-
-A few lines turn the formulas above into a planning tool — cost per token, annual spend at your
-volume, and how fast inference overtakes a one-time training cost:
-
-```python
-def cost_per_million(dollars_per_hour, tokens_per_sec):
-    return dollars_per_hour / (tokens_per_sec * 3600 / 1e6)
-
-for name, dph, tps in [("L4", 0.70, 800), ("H100", 3.00, 2500)]:
-    print(f"{name}: ${cost_per_million(dph, tps):.3f} / 1M tokens")
-
-# annual spend at your traffic, and the training break-even point
-daily_tokens   = 1_000_000_000          # 1B tokens/day
-price_per_m    = 0.40
-training_cost  = 2_000_000              # a one-time $2M training run (illustrative)
-annual = daily_tokens / 1e6 * price_per_m * 365
-print(f"inference: ${annual:,.0f}/year")
-print(f"inference overtakes the $2M training cost in "
-      f"{training_cost / (annual/365):.0f} days")
-```
-
-Run it and watch the break-even land in months, not years — concrete proof of the chapter's first
-claim that the *running* dominates the *making*. Change the volume to yours and you've just built the
-back-of-the-envelope every inference decision should start from.
-
----
-
-That's the frame. You can now say what inference is, why it's a distinct and hard problem, what numbers
-it's judged by, and what those numbers cost. Every chapter after this is a way to move one of them —
-and you now know which one you're trying to move, and why. Chapter 1 turns the measuring discipline
-from § 0.2 into a method: choosing a model and pinning down a latency budget you can actually hold.

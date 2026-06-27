@@ -143,3 +143,9 @@ nav:
       - Orchestration Patterns: chapters/infrastructure/orchestration-patterns.md
       - Multi-Cloud Strategies: chapters/infrastructure/multi-cloud.md
       - "Hands-on: GPU Platform on GKE": chapters/infrastructure/hands-on-gke-platform.md
+  - "9 · Google Cloud":
+      - chapters/google-cloud/index.md
+      - Vertex AI Endpoints: chapters/google-cloud/vertex-ai-endpoints.md
+      - Model Garden & MaaS: chapters/google-cloud/model-garden.md
+      - Cloud Run GPU & Custom Containers: chapters/google-cloud/cloud-run-and-custom.md
+      - Choosing a Surface: chapters/google-cloud/choosing-a-surface.md

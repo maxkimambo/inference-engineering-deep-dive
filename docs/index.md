@@ -38,6 +38,7 @@ away with.
 | 6 | [Modalities](chapters/modalities/index.md) | Applying the inference toolkit to vision, audio, and embeddings. **Gain:** carry the reasoning across modalities. |
 | 7 | [Production](chapters/production/index.md) | Containerization, autoscaling, cold starts, multi-cloud capacity, deployment, observability. **Gain:** scale, deploy, and observe a real serving system. |
 | 8 | [Infrastructure](chapters/infrastructure/index.md) | Kubernetes for ML, GPU scheduling, infrastructure as code, orchestration, multi-cloud — hands-on. **Gain:** build the GPU platform — schedule GPUs, declare clusters as code, serve with scale-to-zero and failover. |
+| 9 | [Google Cloud](chapters/google-cloud/index.md) | Deploying on the managed rungs — Vertex AI endpoints, Model Garden & MaaS, Cloud Run GPU, custom containers. **Gain:** pick the right serving surface (call it → run it) and deploy on it. |
 
 !!! note "Status"
     This is still work in progress chapters are being added.
