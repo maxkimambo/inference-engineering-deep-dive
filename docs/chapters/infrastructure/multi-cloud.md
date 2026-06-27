@@ -285,6 +285,25 @@ re-prefill it avoids. Affinity buys reuse *within* a cloud; a failover pays one 
 re-warms locally. In multi-cloud, **sticky-by-session globally + cache-aware-within-cluster** is the
 whole game.
 
+!!! warning "The honest tension: weighted splitting vs session affinity"
+    An astute reader will catch the contradiction. Earlier this section sold weighted splitting as
+    *precise* traffic distribution (70/30); then the affinity rule pins every conversation to one
+    cluster. Both can't be fully true at once. The reconciliation: **the weight governs session
+    *admission*, not live requests.** Once affinity holds, realized GPU load per cloud is
+    `sessions * length * intensity` — it equals 70/30 only if sessions are statistically uniform, and
+    drifts otherwise. Concretely:
+
+    - You **can't chase a spot-price drop mid-conversation** without eating a re-prefill — cost
+      arbitrage steers *new* traffic, not the backlog.
+    - A cluster can get **stuck hot** from accumulated long-lived sessions, even at a "low" weight.
+    - Split precision and cache hit-rate trade off through **affinity TTL**: short TTL → closer to true
+      70/30, more cache misses; long TTL → better hits, more load drift.
+
+    There's no clean resolution because there isn't one to have — it's the load-balancing-vs-locality
+    tension, surfaced. Treat the weight as a *steering input*, monitor **realized** per-cloud GPU
+    utilization (Chapter 7's observability), and adjust. The saving grace is the same bound as before:
+    being wrong costs a re-prefill, never a wrong answer.
+
 ---
 
 That completes the platform's concepts: schedule GPUs, declare the cluster, orchestrate the server,
