@@ -97,6 +97,9 @@ nav:
   - Home: index.md
   - "0 · Inference":
       - chapters/inference/index.md
+      - Training vs Inference: chapters/inference/training-vs-inference.md
+      - Latency, Throughput & Metrics: chapters/inference/latency-throughput-and-metrics.md
+      - The Economics of a Token: chapters/inference/the-economics-of-a-token.md
   - "1 · Prerequisites":
       - chapters/prerequisites/index.md
   - "2 · Models":
