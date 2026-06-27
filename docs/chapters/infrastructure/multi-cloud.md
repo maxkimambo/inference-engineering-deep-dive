@@ -183,6 +183,48 @@ health-based failover — the § 8.5 thesis end to end: **portable workload, per
 capacity-aware global routing.** Swap the weights to do cost arbitrage (more traffic to whichever
 cloud is cheaper that month), or set Scaleway's weight to 0 for cheap active-passive insurance.
 
+### Alternative front door: Google Cloud global external ALB
+
+You don't have to use Cloudflare. Google's **global external Application Load Balancer** can front
+Scaleway too — you reach the external cloud with an **internet NEG** (a backend that points at a
+public IP/FQDN outside GCP), then weight-split across the two backend services in the URL map:
+
+```bash
+# Scaleway as an external backend: an internet NEG pointing at its public LB IP
+gcloud compute network-endpoint-groups create scw-neg \
+  --global --network-endpoint-type=INTERNET_IP_PORT
+gcloud compute network-endpoint-groups update scw-neg --global \
+  --add-endpoint="ip=$SCW_IP,port=80"
+
+# One backend service per cloud (GKE via its own standalone NEG; Scaleway via scw-neg)
+gcloud compute backend-services create be-scw --global \
+  --load-balancing-scheme=EXTERNAL_MANAGED --protocol=HTTP
+gcloud compute backend-services add-backend be-scw --global \
+  --network-endpoint-group=scw-neg --global-network-endpoint-group
+# ...be-gke wired to the GKE Service's NEG the same way...
+
+# Weighted split lives in the URL map's routeAction (weights 0–1000 → 70/30):
+#   defaultRouteAction.weightedBackendServices: [{be-gke, weight:700},{be-scw, weight:300}]
+gcloud compute url-maps import infer-map --global --source=urlmap.yaml
+```
+
+!!! key "Cloudflare vs Google global ALB: who's in the critical path?"
+    Both split weighted traffic with health-based failover. The architectural difference is **where
+    the front door lives**:
+
+    - **Cloudflare LB** — provider-neutral anycast/DNS at the edge. Reaches any public IP, no GCP
+      dependency, and it survives *either* cloud (including GCP) having a bad day. Best when the front
+      door is your **insurance against a whole-provider outage**. (And you already run it.)
+    - **Google global ALB** — GCP-native, composes with **Cloud Armor** (WAF/DDoS) and **Cloud CDN**,
+      single pane if you're GCP-centric. But the front door *is in GCP*, so GCP sits in the path even
+      for Scaleway-bound requests — great for **cost/capacity splitting**, weaker as insurance against
+      GCP itself.
+
+    Rule of thumb: optimizing **cost/capacity** across clouds → either works, pick your ecosystem.
+    Optimizing **resilience against a provider outage** → put the front door at a *neutral* third
+    party (Cloudflare/DNS), so no single cloud you're hedging against is also the thing routing around
+    it.
+
 **Tear down:**
 
 ```bash
@@ -190,6 +232,7 @@ kubectl --context infra-lab-scw delete svc qwen-lb
 kubectl --context gke_${PROJECT_ID}_${REGION}_infra-lab delete svc qwen-lb
 scw k8s cluster delete cluster-id=$CID with-additional-resources=true
 terraform destroy   # removes the Cloudflare LB, pools, and monitor
+# if you built the Google ALB path instead, delete its url-map, backend-services, and scw-neg too
 ```
 
 ---
