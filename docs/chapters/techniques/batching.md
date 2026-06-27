@@ -103,22 +103,95 @@ continuous:  step1 [A B C D]    step2 [A B C D]    step3 [E B C D]  ← A finish
 A concrete trace makes it click. Take three requests with different prompt and output lengths — **A**
 (4-token prompt, 3 out), **B** (6-token prompt, 5 out), **C** (2-token prompt, 2 out) — sharing one
 GPU. Each pass reads the weights *once* and advances every **active** lane by one token; a lane that
-hits its limit finishes and frees its KV cache and its slot, without disturbing the others:
+hits its limit finishes and frees its KV cache and its slot, without disturbing the others. Step
+through it:
 
-```
-pass       lane A (own KV)   lane B (own KV)   lane C (own KV)   weights
-─────────  ───────────────   ───────────────   ───────────────   ───────
-prefill    gen 1   KV  5     gen 1   KV  7     gen 1   KV  3     read 1×
-decode 1   gen 2   KV  6     gen 2   KV  8     gen 2   KV  4 ✔   read 1×
-decode 2   gen 3   KV  7 ✔   gen 3   KV  9      — slot free —    read 1×
-decode 3    — done —         gen 4   KV 10      — done —         read 1×
-decode 4    — done —         gen 5   KV 11 ✔    — done —         read 1×
-```
+<div id="cb-widget" style="margin:1.2em 0;font-size:14px;" aria-label="Step-through of three requests A, B and C flowing through continuous batching.">
+<style>
+#cb-widget button{border:1px solid var(--md-default-fg-color--lighter);background:transparent;color:var(--md-default-fg-color);border-radius:6px;padding:5px 11px;font:inherit;font-size:13px;cursor:pointer;line-height:1.3;}
+#cb-widget button:hover:not(:disabled){background:var(--md-default-fg-color--lightest);}
+#cb-widget button:disabled{opacity:.35;cursor:default;}
+</style>
+<div style="background:var(--md-code-bg-color);border-radius:10px;padding:12px 14px;margin-bottom:12px;">
+<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+<div style="display:flex;align-items:center;justify-content:center;min-width:112px;height:44px;background:var(--md-default-bg-color);border:1px solid var(--md-default-fg-color--lightest);border-radius:7px;text-align:center;line-height:1.25;font-size:12px;">model weights<br><span style="color:var(--md-default-fg-color--light);">read once / pass</span></div>
+<div style="font-size:20px;color:var(--md-default-fg-color--lighter);">&rarr;</div>
+<div style="flex:1;min-width:210px;">
+<div style="font-size:13px;color:var(--md-default-fg-color--light);"><span id="cb-pass" style="font-weight:600;color:var(--md-default-fg-color);">arrive</span> &middot; applied to <span id="cb-n">0</span> active lane(s)</div>
+<div id="cb-status" style="font-size:13px;color:var(--md-default-fg-color--light);line-height:1.5;margin-top:3px;">Three requests arrive with different prompts. Nothing has run yet.</div>
+</div>
+</div>
+</div>
+<div id="cb-lanes" style="display:flex;flex-direction:column;gap:9px;"></div>
+<div style="display:flex;align-items:center;gap:7px;margin-top:13px;">
+<button id="cb-prev" aria-label="previous step">&lsaquo;</button>
+<button id="cb-next" style="min-width:78px;">step &rsaquo;</button>
+<button id="cb-play">&#9654; play</button>
+<button id="cb-reset" aria-label="reset">&#8635;</button>
+<span id="cb-count" style="margin-left:auto;font-size:12px;color:var(--md-default-fg-color--lighter);"></span>
+</div>
+<div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:12px;font-size:12px;color:var(--md-default-fg-color--lighter);">
+<span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;border:1px solid var(--md-default-fg-color--lighter);vertical-align:-1px;"></span> prompt token (shared weights)</span>
+<span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#108a66;vertical-align:-1px;"></span> generated token (own lane)</span>
+<span>KV = private cache per request</span>
+</div>
+<script>
+(function(){
+var P={A:4,B:6,C:2},MAXKV=11,ids=['A','B','C'];
+var col={A:{s:'#108a66',t:'rgba(16,138,102,.16)'},B:{s:'#6b46d9',t:'rgba(107,70,217,.16)'},C:{s:'#b9740f',t:'rgba(185,116,15,.16)'}};
+var F=[
+{p:'arrive',r:{A:{g:0,s:'queued'},B:{g:0,s:'queued'},C:{g:0,s:'queued'}},x:'Three requests arrive with different prompts. Nothing has run yet.'},
+{p:'prefill',r:{A:{g:1,s:'active'},B:{g:1,s:'active'},C:{g:1,s:'active'}},x:'One shared forward pass reads every prompt and emits each request’s first token. Each now has its own KV cache.'},
+{p:'decode 1',r:{A:{g:2,s:'active'},B:{g:2,s:'active'},C:{g:2,s:'done'}},x:'Each active request generates one more token in a single shared pass. C hits its limit, finishes, and its KV cache is freed.'},
+{p:'decode 2',r:{A:{g:3,s:'done'},B:{g:3,s:'active'},C:{g:2,s:'done'}},x:'C’s slot is now free. A finishes this step; B keeps generating.'},
+{p:'decode 3',r:{A:{g:3,s:'done'},B:{g:4,s:'active'},C:{g:2,s:'done'}},x:'Only B is left in the batch — it has all the lanes to itself now.'},
+{p:'decode 4',r:{A:{g:3,s:'done'},B:{g:5,s:'done'},C:{g:2,s:'done'}},x:'B reaches its limit and finishes. Every KV cache is now freed.'},
+{p:'done',r:{A:{g:3,s:'done'},B:{g:5,s:'done'},C:{g:2,s:'done'}},x:'All three ran independently down parallel lanes — sharing only the weights, never each other’s tokens or KV cache.'}];
+var i=0,timer=null;
+var $=function(id){return document.getElementById(id);};
+function pills(n,kind,c){var o='';for(var k=0;k<n;k++){var st=kind==='p'?'border:1px solid var(--md-default-fg-color--lighter);':'background:'+c.s+';';o+='<span style="display:inline-block;width:13px;height:13px;border-radius:3px;margin:1px;'+st+'"></span>';}return o;}
+function render(){
+var f=F[i];
+$('cb-pass').textContent=f.p;
+$('cb-status').textContent=f.x;
+$('cb-n').textContent=ids.filter(function(d){return f.r[d].s==='active';}).length;
+$('cb-count').textContent='step '+(i+1)+' of '+F.length;
+$('cb-lanes').innerHTML=ids.map(function(d){
+var r=f.r[d],c=col[d],done=r.s==='done',q=r.s==='queued',kv=P[d]+r.g,w=Math.round(kv/MAXKV*100);
+var badge='<div style="display:flex;align-items:center;justify-content:center;width:29px;height:29px;border-radius:50%;background:'+c.s+';color:#fff;font-weight:600;font-size:14px;flex:none;">'+d+'</div>';
+var tag=q?'<span style="font-size:12px;color:var(--md-default-fg-color--lighter);">queued</span>':done?'<span style="font-size:12px;color:var(--md-default-fg-color--light);">✓ done</span>':'<span style="font-size:12px;color:'+c.s+';font-weight:600;">▶ active</span>';
+var kvt=done?'<span style="font-size:12px;color:var(--md-default-fg-color--lighter);">KV freed</span>':'<span style="font-size:12px;color:var(--md-default-fg-color--light);">KV '+kv+'</span>';
+var bar=done?'<div style="height:6px;border-radius:3px;background:var(--md-default-fg-color--lightest);"></div>':'<div style="height:6px;border-radius:3px;background:var(--md-default-fg-color--lightest);"><div style="height:6px;border-radius:3px;width:'+w+'%;background:'+c.s+';"></div></div>';
+return '<div style="display:flex;align-items:center;gap:11px;background:var(--md-code-bg-color);border:1px solid var(--md-default-fg-color--lightest);border-radius:9px;padding:9px 11px;'+(done?'opacity:.72;':'')+'"><div>'+badge+'</div><div style="flex:1;min-width:0;"><div style="margin-bottom:5px;line-height:1;">'+pills(P[d],'p')+pills(r.g,'g',c)+'<span style="font-size:11px;color:var(--md-default-fg-color--lighter);margin-left:6px;">prompt '+P[d]+' + gen '+r.g+'</span></div><div style="display:flex;align-items:center;gap:8px;"><div style="flex:1;">'+bar+'</div>'+kvt+'</div></div><div style="flex:none;width:56px;text-align:right;">'+tag+'</div></div>';
+}).join('');
+$('cb-prev').disabled=(i===0);$('cb-next').disabled=(i===F.length-1);
+}
+function step(d){i=Math.max(0,Math.min(F.length-1,i+d));render();}
+function stop(){if(timer){clearInterval(timer);timer=null;$('cb-play').innerHTML='▶ play';}}
+$('cb-next').onclick=function(){stop();step(1);};
+$('cb-prev').onclick=function(){stop();step(-1);};
+$('cb-reset').onclick=function(){stop();i=0;render();};
+$('cb-play').onclick=function(){if(timer){stop();return;}if(i===F.length-1){i=0;render();}$('cb-play').innerHTML='❙❙ pause';timer=setInterval(function(){if(i>=F.length-1){stop();}else{step(1);}},1400);};
+render();
+})();
+</script>
+</div>
 
 C finishes first and frees its slot mid-flight; A finishes next; B runs on alone — and at no point did
 any lane read another's tokens or KV cache. The batch is simply *who is in this pass*, and that
 membership changes every step. (`✔` = hit its token limit; `KV` counts prompt + generated tokens, the
 private cache each lane carries until it's done.)
+
+??? note "Prefer it static — the same trace as a table"
+    ```
+    pass       lane A (own KV)   lane B (own KV)   lane C (own KV)   weights
+    ─────────  ───────────────   ───────────────   ───────────────   ───────
+    prefill    gen 1   KV  5     gen 1   KV  7     gen 1   KV  3     read 1×
+    decode 1   gen 2   KV  6     gen 2   KV  8     gen 2   KV  4 ✔   read 1×
+    decode 2   gen 3   KV  7 ✔   gen 3   KV  9      — slot free —    read 1×
+    decode 3    — done —         gen 4   KV 10      — done —         read 1×
+    decode 4    — done —         gen 5   KV 11 ✔    — done —         read 1×
+    ```
 
 !!! key "Continuous batching is the baseline, not an optimization you add"
     Turning it off is the unusual choice. It's why a single GPU can sustain dozens of concurrent users
