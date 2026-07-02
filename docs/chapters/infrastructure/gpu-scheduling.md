@@ -27,8 +27,8 @@ node has hardware" and "the scheduler can allocate it."
 
 You don't wire that bridge by hand. The **NVIDIA GPU Operator** is a Kubernetes operator that, on
 every GPU node, installs and manages the whole stack: the **driver**, the **container toolkit** (so
-containers see the GPU), the **device plugin** (advertises `nvidia.com/gpu`), **Node Feature
-Discovery** (labels nodes with GPU model, memory, MIG capability), and **DCGM** (the exporter that
+containers see the GPU), the **device plugin** (advertises `nvidia.com/gpu`), **GPU Feature
+Discovery** (on top of Node Feature Discovery — labels nodes with GPU model, memory, MIG capability), and **DCGM** (the exporter that
 feeds GPU metrics to your monitoring — Chapter 7's observability). On managed clusters (GKE/EKS/AKS)
 the cloud often installs a managed equivalent. Either way: **something has to advertise the GPU, and
 that something is operator-managed, not a manual `apt install`.**
@@ -66,7 +66,7 @@ nodeSelector:
 
 The device-plugin model has a blind spot: it counts GPUs but can't *describe* them. You ask for "1
 GPU," not "1 GPU with ≥40 GB free and a 3g.40gb MIG profile." For heterogeneous fleets that's a real
-limitation. **Dynamic Resource Allocation (DRA)** fixes it, and as of **Kubernetes 1.34 (GA, 2026)**
+limitation. **Dynamic Resource Allocation (DRA)** fixes it, and as of **Kubernetes 1.34 (GA, August 2025)**
 it's the modern path — NVIDIA donated the DRA driver to the CNCF.
 
 DRA replaces "give me N of this resource" with **structured requests against device attributes**. You
@@ -81,10 +81,11 @@ spec:
   devices:
     requests:
       - name: gpu
-        deviceClassName: gpu.nvidia.com
-        selectors:
-          - cel:
-              expression: "device.attributes['memory'].quantity >= '40Gi'"
+        exactly:
+          deviceClassName: gpu.nvidia.com
+          selectors:
+            - cel:
+                expression: "device.capacity['gpu.nvidia.com'].memory.compareTo(quantity('40Gi')) >= 0"
 ```
 
 | | Device plugin (classic) | DRA (1.34 GA) |
@@ -159,13 +160,14 @@ creates and destroys them to match pending pods:
 - **Cluster Autoscaler** — scales predefined node *groups* up and down. Reliable, works everywhere
   (good for multi-cloud/hybrid), but node-group-bound and slower (~3–4 min to add a node).
 - **Karpenter** — provisions nodes by calling cloud APIs directly from pending-pod requirements:
-  faster (~45–60 s), bin-packs better, natively does **scale-to-zero** (no idle GPU floor) and
-  **Spot** strategies. The cost-optimal choice for bursty/intermittent GPU work — you pay for the
+  faster (~45–60 s), bin-packs better, with more flexible scale-from-zero and
+  **Spot** strategies (Cluster Autoscaler also scales a node group to zero with `min = 0`). The cost-optimal choice for bursty/intermittent GPU work — you pay for the
   accelerator only while a job runs.
 
 !!! key "Scale-to-zero is the GPU cost lever"
-    A GPU node left running overnight at zero traffic is pure waste. **Karpenter** terminating idle
-    GPU nodes (and **Kueue** queueing jobs while it spins capacity up) turns a fixed GPU bill into a
+    A GPU node left running overnight at zero traffic is pure waste. The node autoscaler terminating
+    idle GPU nodes — Karpenter, or Cluster Autoscaler with a `min=0` pool — (and **Kueue** queueing
+    jobs while it spins capacity up) turns a fixed GPU bill into a
     usage-based one — frequently a 30–50% cut for non-24/7 workloads. The trade is **cold starts**
     (Chapter 7, § 7.2.2): scaling from zero means a node provision + image pull + weight load before
     the first token. Scale-to-zero and cold-start mitigation are two ends of the same decision.
@@ -190,7 +192,7 @@ kubectl run blocked --image=nvidia/cuda:12.4.1-base-ubuntu22.04 \
 kubectl get pod blocked          # stays Pending — the taint repels it
 kubectl describe pod blocked | grep -i "untolerated\|taint"
 
-# 3. Add the toleration (see gpu-smoke.yaml above) → it schedules and runs
+# 3. Add the toleration (gpu-smoke.yaml, § 8.6 Step 2) → it schedules and runs
 kubectl delete pod blocked
 kubectl apply -f gpu-smoke.yaml  # has the toleration; lands on the GPU node
 ```

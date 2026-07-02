@@ -137,22 +137,38 @@ pools** (one per cloud), and a **load balancer** on a hostname, with weighted st
 
 ```hcl
 resource "cloudflare_load_balancer_monitor" "health" {
-  account_id = var.cf_account_id
-  type = "http"; method = "GET"; path = "/health"; expected_codes = "200"
-  interval = 15; retries = 2; timeout = 5      # marks a cloud down fast
+  account_id     = var.cf_account_id
+  type           = "http"
+  method         = "GET"
+  path           = "/health"
+  expected_codes = "200"
+  interval       = 60      # marks a cloud down fast; <60s needs Business/Enterprise
+  retries        = 2
+  timeout        = 5
 }
 resource "cloudflare_load_balancer_pool" "gcp" {
-  account_id = var.cf_account_id; name = "gcp-gke"
-  monitor = cloudflare_load_balancer_monitor.health.id
-  origins { name = "gke"; address = var.gcp_ip; enabled = true }
+  account_id = var.cf_account_id
+  name       = "gcp-gke"
+  monitor    = cloudflare_load_balancer_monitor.health.id
+  origins {
+    name    = "gke"
+    address = var.gcp_ip
+    enabled = true
+  }
 }
 resource "cloudflare_load_balancer_pool" "scaleway" {
-  account_id = var.cf_account_id; name = "scaleway-kapsule"
-  monitor = cloudflare_load_balancer_monitor.health.id
-  origins { name = "kapsule"; address = var.scw_ip; enabled = true }
+  account_id = var.cf_account_id
+  name       = "scaleway-kapsule"
+  monitor    = cloudflare_load_balancer_monitor.health.id
+  origins {
+    name    = "kapsule"
+    address = var.scw_ip
+    enabled = true
+  }
 }
 resource "cloudflare_load_balancer" "infer" {
-  zone_id = var.cf_zone_id; name = "infer.kimambo.de"
+  zone_id = var.cf_zone_id
+  name    = "infer.kimambo.de"
   default_pool_ids = [cloudflare_load_balancer_pool.gcp.id,
                       cloudflare_load_balancer_pool.scaleway.id]
   fallback_pool_id = cloudflare_load_balancer_pool.gcp.id
@@ -166,14 +182,15 @@ resource "cloudflare_load_balancer" "infer" {
 
 **4. Watch the split — and the failover.** Hit the hostname in a loop; responses now come from
 *both* clouds in roughly 70/30 proportion. Then break one cloud and watch Cloudflare's health monitor
-drain it within ~30 s, shifting **all** traffic to the survivor — active-active turning into automatic
+drain it within a couple of minutes, shifting **all** traffic to the survivor — active-active turning into automatic
 failover, no human in the loop:
 
 ```bash
 for i in $(seq 20); do curl -s https://infer.kimambo.de/v1/models | jq -r '.data[0].id'; done
 # now kill GCP's serving side; health checks fail; traffic moves 100% to Scaleway
 kubectl --context gke_${PROJECT_ID}_${REGION}_infra-lab scale deployment qwen --replicas=0
-for i in $(seq 20); do curl -s -o /dev/null -w '%{http_code}\n' https://infer.kimambo.de/v1/chat/completions \
+for i in $(seq 20); do curl -s -o /dev/null -w '%{http_code}\n' -H 'content-type: application/json' \
+  https://infer.kimambo.de/v1/chat/completions \
   -d '{"model":"Qwen/Qwen2.5-7B-Instruct","messages":[{"role":"user","content":"hi"}]}'; done
 # still 200s — Scaleway absorbed it
 ```

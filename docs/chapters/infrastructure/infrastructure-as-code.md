@@ -48,7 +48,9 @@ resource "google_container_node_pool" "h100" {
     }
 
     taint {                            # keep non-GPU pods off (§ 8.2)
-      key = "nvidia.com/gpu"; value = "present"; effect = "NO_SCHEDULE"
+      key    = "nvidia.com/gpu"
+      value  = "present"
+      effect = "NO_SCHEDULE"
     }
   }
 }

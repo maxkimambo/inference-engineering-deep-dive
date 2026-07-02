@@ -45,7 +45,7 @@ for an `N`-token response. A concrete feel for it — TTFT 300 ms, ITL 20 ms, a 
 Latency is per request, from the user's side. **Throughput** is per system, from the operator's side:
 how much work the deployment completes per unit time, usually measured two ways:
 
-- **Requests per second** — how many concurrent users you can serve.
+- **Requests per second** — the rate at which the system completes requests (together with request duration, this sets how many concurrent users you can serve).
 - **Tokens per second (aggregate)** — total tokens generated across *all* in-flight requests; the
   truest measure of a GPU's useful output.
 
@@ -78,8 +78,8 @@ Illustratively:
 ## Serve to percentiles, not averages
 
 One measurement discipline before you optimize anything: **a latency target is a percentile, not an
-average.** "Average TTFT 200 ms" can hide that 1 in 20 users waits 4 seconds — and averages are
-exactly the metric that conceals tail pain, because a few fast requests mask many slow ones. Real SLOs
+average.** "Average TTFT 300 ms" can hide that 1 in 20 users waits 4 seconds — and averages are
+exactly the metric that conceals tail pain, because the many fast requests mask the few slow ones. Real SLOs
 are stated as percentiles:
 
 - **p50** (median) — the typical experience.

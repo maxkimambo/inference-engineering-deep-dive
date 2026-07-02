@@ -72,7 +72,7 @@ The two common bi-directional streaming protocols:
 | Protocol | Data | Trade-off |
 |----------|------|-----------|
 | **WebSockets** | unstructured, real-time (audio streams) | flexible; *no* schema enforcement — the server parses/validates downstream |
-| **gRPC** | structured, well-defined service-to-service | schema-enforced (no parsing burden); the validation layer makes it slightly slower than WebSockets |
+| **gRPC** | structured, well-defined service-to-service | schema-enforced (no parsing burden); needs proto tooling and has weak native browser support |
 
 !!! warning "WebSocket concurrency is a hard, per-replica limit"
     A server supports up to a fixed, developer-configured number of concurrent WebSocket connections.

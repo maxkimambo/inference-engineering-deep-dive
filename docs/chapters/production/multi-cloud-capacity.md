@@ -61,8 +61,8 @@ Three procurement mechanisms, which you blend:
 Just as a cluster's load balancer keeps every GPU evenly fed, a multi-cluster system needs a
 **global** load balancer — one that's *geography-aware*.
 
-Rule of thumb: **~5 ms of latency per time zone crossed.** New York → San Francisco is ~15 ms *one
-way*. Against tight latency budgets, that's enormous.
+Rule of thumb: **~10 ms of one-way latency per time zone crossed.** New York → San Francisco is
+~30 ms *one way* (~60–70 ms round trip). Against tight latency budgets, that's enormous.
 
 So: don't let a request sit queued in one region when capacity is free nearby, but also **don't
 habitually send a Singapore user's request to San Francisco.** Run workloads as close to end users as

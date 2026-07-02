@@ -154,7 +154,7 @@ function render(){
 var f=F[i];
 $('cb-pass').textContent=f.p;
 $('cb-status').textContent=f.x;
-$('cb-n').textContent=ids.filter(function(d){return f.r[d].s==='active';}).length;
+$('cb-n').textContent=i===0?0:ids.filter(function(d){return f.r[d].g>F[i-1].r[d].g;}).length;
 $('cb-count').textContent='step '+(i+1)+' of '+F.length;
 $('cb-lanes').innerHTML=ids.map(function(d){
 var r=f.r[d],c=col[d],done=r.s==='done',q=r.s==='queued',kv=P[d]+r.g,w=Math.round(kv/MAXKV*100);
@@ -179,8 +179,8 @@ render();
 
 C finishes first and frees its slot mid-flight; A finishes next; B runs on alone — and at no point did
 any lane read another's tokens or KV cache. The batch is simply *who is in this pass*, and that
-membership changes every step. (`✔` = hit its token limit; `KV` counts prompt + generated tokens, the
-private cache each lane carries until it's done.)
+membership changes every step. (In the table below, `✔` = hit its token limit; `KV` counts prompt +
+generated tokens, the private cache each lane carries until it's done.)
 
 ??? note "Prefer it static — the same trace as a table"
     ```

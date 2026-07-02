@@ -27,7 +27,9 @@ Every speculative scheme shares three steps:
 
 1. A **speculator** proposes one or more **draft tokens** — cheap guesses at what comes next.
 2. The **target model** (the real model you're accelerating) runs a forward pass that **verifies** all
-   the draft tokens *at once* — checking whether each matches what it would have produced.
+   the draft tokens *at once* — under greedy decoding, checking for an exact match; under sampling,
+   accepting each draft with a rejection-sampling rule that provably preserves the target's output
+   distribution.
 3. The target accepts every valid draft token *up to the first wrong one*, and generates one more
    itself, completing the pass.
 
@@ -105,7 +107,8 @@ model on cheap hardware*, not to speculate on a B200. It's inefficient and its a
 **EAGLE** is a purpose-built draft model, trained from scratch to generate up to **~8 draft tokens**
 (2× Medusa) at **high acceptance**. Its trick: during inference the target accumulates rich context in
 its **hidden states** between layers — information ordinary draft models never see. EAGLE is trained to
-**take hidden states as input** (specifically an early, a middle, and a late layer's) and emit draft
+**take hidden states as input** (EAGLE-1/2: the top layer's; EAGLE-3: an early, a middle, and a
+late layer's, fused) and emit draft
 tokens. It's often **under 1B parameters** and scales well with more training.
 
 ```

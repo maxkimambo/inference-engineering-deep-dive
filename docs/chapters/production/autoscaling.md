@@ -183,7 +183,7 @@ both bottlenecks (an under-scaled stage) and overprovisioning (an over-scaled on
 
 !!! key "But keep the whole pipeline in one cluster"
     Independent scaling, *co-located* hardware. If intra-cluster messaging is ~10 ms and cross-cluster
-    is ~50 ms, that 40 ms gap across a 5-stage pipeline is **200 ms — two-thirds of a 300 ms SLA**,
-    spent entirely on network hops. Scale the stages separately; keep them physically together.
+    is ~50 ms, that 40 ms gap across the four hops of a 5-stage pipeline is **160 ms — over half of a
+    300 ms SLA**, spent entirely on network hops. Scale the stages separately; keep them physically together.
 
 **Next:** [Multi-Cloud Capacity →](multi-cloud-capacity.md)

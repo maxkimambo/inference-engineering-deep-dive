@@ -68,7 +68,7 @@ Three shifts define production inference:
 By the end of this chapter you can:
 
 - [x] Build a lean, version-pinned inference container and explain why pinning is non-negotiable
-- [x] Configure a traffic-based autoscaler (the five factors) and pick a batching strategy
+- [x] Configure a traffic-based autoscaler (the five knobs) and pick a batching strategy
 - [x] Break a cold start into its four stages and shorten each
 - [x] Decide when scale-to-zero helps and when it signals you're not ready for dedicated infra
 - [x] Estimate dedicated-deployment cost and compare it honestly to a per-token API

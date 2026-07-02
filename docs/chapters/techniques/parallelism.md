@@ -9,15 +9,15 @@ the whole game becomes doing that *without* drowning in inter-GPU communication.
 A clean rule of thumb: **in FP8, one billion parameters of weights ≈ 1 GB of VRAM** (FP8 = 1 byte each).
 
 Take **DeepSeek-V3.1**, 671B parameters. The weights alone are ~671 GB — a single 180 GB B200 hits an
-out-of-memory (OOM) error instantly. But weights are only half the story; you must also fit the **KV cache**, which often eats
-**80%+ of the *remaining* VRAM**. So the real sizing multiplies weights by a KV allowance and rounds up
+out-of-memory (OOM) error instantly. But weights are only half the story; you must also fit the **KV cache**, which typically needs
+**headroom comparable to the weights themselves**. So the real sizing multiplies weights by a KV allowance and rounds up
 to the next instance:
 
 ```python
 # Minimum GPUs for DeepSeek in FP8
 bits_precision    = 8        # FP8
 params            = 671      # billions
-kv_cache_alloc    = 1.8      # weights + ~80% headroom for KV cache
+kv_cache_alloc    = 1.8      # provision KV headroom of ~80% of the weights' size
 
 vram_required = (bits_precision / 8) * params * kv_cache_alloc
               # = 1 * 671 * 1.8 ≈ 1200 GB
@@ -65,8 +65,9 @@ Works for dense (Llama 405B) and MoE alike.
               then ──► all-reduce ──► combine into one output ──► next layer
 ```
 
-The catch: after each layer, the partial results must be combined in an **all-reduce** before the next
-layer can start — a synchronization across *all* TP GPUs, *every layer*. On fast intra-node
+The catch: within each layer, the partial results must be combined in **all-reduces** before
+computation can proceed — two per transformer layer (after the attention output projection and after
+the MLP down projection), each a synchronization across *all* TP GPUs. On fast intra-node
 NVLink/NVSwitch this overhead is minimal; across slow InfiniBand it's crippling.
 
 !!! key "More TP = lower per-user latency (within a node)"
@@ -89,15 +90,15 @@ each GPU hosts 16 full experts.
 
 Each token still takes just as long, but the *system* handles **more simultaneous tokens** — pure
 throughput. And critically, **EP needs less communication than TP**: the router is small and replicated
-per-GPU, so the only cross-GPU traffic is passing tokens to their experts — there's no per-layer
-all-reduce to collect results. That lighter footprint lets **EP scale to multi-node** and to systems
+per-GPU, so the only cross-GPU traffic is routing tokens to their experts and returning the results
+(an all-to-all pair per MoE layer) — far lighter than TP's all-reduces over full activations. That lighter footprint lets **EP scale to multi-node** and to systems
 with limited interconnect.
 
 !!! info "Real deployments mix TP and EP"
     The common frontier-MoE pattern: **TP for the attention layers** (latency-sensitive, dense) and
     **EP for the sparse MoE layers** (throughput-sensitive). One deployment, both benefits — TP where
-    you need low latency, EP where you need scale. (Context Parallelism, a third data-parallel axis, is
-    rare in LLM inference but essential for video — see Chapter 6.6.)
+    you need low latency, EP where you need scale. (Context Parallelism — a fourth axis that splits the *sequence* itself
+    across GPUs — is rare in LLM inference but essential for video — see Chapter 6.6.)
 
 ### 5.4.3 Multi-node inference
 

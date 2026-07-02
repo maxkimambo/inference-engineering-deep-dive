@@ -97,8 +97,10 @@ and see which side of the ridge it lands on. For LLM inference, that operation i
 
 ## Worked example: why decode is memory-bound
 
-Let's compute the arithmetic intensity of a **single decode step's attention** and watch it land
-far below 295. Setup (matching the standard, unoptimized attention algorithm):
+Let's compute the arithmetic intensity of **unfused attention over a full 4k sequence** and watch
+it land far below 295. (A true decode step is even more extreme: Q is `1×d`, so intensity collapses
+to ~1 op/byte — you read the whole KV cache to do one dot product's worth of math per entry.)
+Setup (matching the standard, unoptimized attention algorithm):
 
 - Sequence length **N = 4096**
 - Attention-head dimension **d = 128**
@@ -117,7 +119,7 @@ The algorithm has three steps, each a *read → compute → write*:
 **Total memory traffic** (sum of reads + writes):
 
 \[
-(2\cdot2Nd + 2Nd) + (2NN + 2NN) + (2NN + 2Nd + 2Nd) = 8N^2 + 8Nd \ \text{bytes}
+(2\cdot2Nd + 2NN) + (2NN + 2NN) + (2NN + 2Nd + 2Nd) = 8N^2 + 8Nd \ \text{bytes}
 \]
 
 **Total compute** (sum of the middle column):
@@ -133,7 +135,8 @@ The algorithm has three steps, each a *read → compute → write*:
 \]
 
 !!! key "62 ≪ 295 → memory-bound, proven"
-    Decode attention does only **~62 operations per byte** it moves. The H100 wants **295**. So on
+    Even full-sequence attention does only **~62 operations per byte** it moves — a decode step
+    manages ~1. The H100 wants **295**. So on
     decode the GPU is reading data far faster than it can find math to do with it — **memory
     bandwidth is the wall**, and the expensive FLOP units sit ~80% idle. *This is why decode is
     memory-bound, not a heuristic — a ratio.*

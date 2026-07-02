@@ -38,7 +38,10 @@ A `main.tf` that creates a GKE Standard cluster and an **L4 node pool that scale
 every § 8.2 decision (autoscaling floor of 0, Spot, the managed driver) encoded as reviewable code:
 
 ```hcl
-provider "google" { project = var.project_id; region = var.region }
+provider "google" {
+  project = var.project_id
+  region  = var.region
+}
 variable "project_id" {}
 variable "region" { default = "us-central1" }
 
@@ -64,7 +67,10 @@ resource "google_container_node_pool" "gpu" {
   cluster  = google_container_cluster.main.id
   location = var.region
 
-  autoscaling { min_node_count = 0; max_node_count = 2 }   # ← scale to zero
+  autoscaling {                      # ← scale to zero
+    min_node_count = 0
+    max_node_count = 2
+  }
 
   node_config {
     machine_type = "g2-standard-8"   # 1× L4
@@ -126,8 +132,8 @@ What you just watched: a pod requested `nvidia.com/gpu: 1`, the scheduler had no
 the cold-start cost of scale-to-zero (§ 8.2). Clean up: `kubectl delete pod gpu-smoke`.
 
 !!! note "GPU sharing on this pool"
-    L4 supports **time-slicing** (add `--gpu-sharing-strategy=time-sharing --max-shared-clients-per-gpu=2`
-    when creating the pool) so two pods share one L4 — useful for packing small models, with *no*
+    L4 supports **time-slicing** (add `gpu-sharing-strategy=time-sharing,max-shared-clients-per-gpu=2`
+    to the `--accelerator` flag when creating the pool; Terraform: `gpu_sharing_config`) so two pods share one L4 — useful for packing small models, with *no*
     memory isolation (§ 8.2). **MIG** needs an A100/H100/H200, so it's not available on L4 — exactly
     the hardware-tier distinction from Chapter 3.
 
@@ -243,11 +249,27 @@ spec: { clusterQueue: gpu-cq }
 
 ```bash
 kubectl apply -f queue.yaml
-# submit TWO 1-GPU jobs into a 1-GPU quota; the second must wait, not partially place
+# submit TWO 1-GPU jobs into a 1-GPU quota; the second must wait, not partially place.
+# The queue-name label must be on the Job at creation, and each Job must actually
+# request a GPU (and tolerate the GPU taint) — otherwise Kueue has nothing to meter.
 for i in 1 2; do
-  kubectl create job gpujob-$i --image=nvidia/cuda:12.4.1-base-ubuntu22.04 -- \
-    bash -c 'nvidia-smi; sleep 120'
-  kubectl label job gpujob-$i kueue.x-k8s.io/queue-name=gpu-lq --overwrite
+  kubectl apply -f - <<EOF
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: gpujob-$i
+  labels: { kueue.x-k8s.io/queue-name: gpu-lq }
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      tolerations: [{ key: nvidia.com/gpu, operator: Exists, effect: NoSchedule }]
+      containers:
+        - name: main
+          image: nvidia/cuda:12.4.1-base-ubuntu22.04
+          command: ["bash", "-c", "nvidia-smi; sleep 120"]
+          resources: { limits: { nvidia.com/gpu: 1 } }
+EOF
 done
 kubectl get workloads     # one Admitted, one with admission pending — quota enforced
 ```
@@ -281,8 +303,9 @@ gcloud container fleet memberships register infra-lab-ue1 --gke-cluster=us-east1
 gcloud container fleet ingress enable --config-membership=infra-lab-uc1
 ```
 
-You then deploy a `MultiClusterService` (exports the `qwen` Service across the fleet) and a
-`MultiClusterGateway` (one global anycast IP, health-checked). Requests land on a healthy cluster
+You then deploy a `ServiceExport` (exports the `qwen` Service across the fleet) and a `Gateway`
+of class `gke-l7-global-external-managed-mc` plus an `HTTPRoute` (one global anycast IP,
+health-checked). Requests land on a healthy cluster
 *with GPU headroom*; when one region is out of L4 capacity or down, traffic shifts to the other —
 the **active–passive failover** of § 8.5, with the passive side scaled to zero so insurance is nearly
 free. This is the *same-cloud, multi-region* path. For a true **second cloud**, swap the GCP-only

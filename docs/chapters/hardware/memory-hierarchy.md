@@ -18,7 +18,7 @@ From closest-and-fastest to farthest-and-largest, for an **H100**:
 |------|----------|-----------|------------------|------------|
 | **Registers** | ~256 KB / SM (~32 MB chip) | ~tens of TB/s aggregate | ~1× (1 cycle) | compiler |
 | **Shared mem / L1** | up to 228 KB / SM | ~tens of TB/s | ~20–30× | the kernel (software) |
-| **L2 cache** | 50 MB (whole chip) | ~several TB/s | ~10× of L1 | hardware |
+| **L2 cache** | 50 MB (whole chip) | ~several TB/s | ~200–300× | hardware |
 | **HBM (VRAM)** | 80 GB HBM3 | **3.35 TB/s** | ~hundreds of × | you (allocations) |
 | **Host RAM** (over PCIe/NVLink-C2C) | 100s of GB–TBs | 64 GB/s (PCIe5) … 900 GB/s (C2C) | ~1000s of × | you (offload) |
 

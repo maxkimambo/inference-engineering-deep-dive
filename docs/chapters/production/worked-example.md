@@ -31,7 +31,8 @@ Benchmark one L4 replica under **continuous batching**: it sustains the SLA up t
 requests**. So set the **concurrency target = 32**, and make the engine's batch size match.
 
 Now size the fleet with **Little's Law** — concurrent requests = arrival rate × time-in-system. A
-streaming request holds its slot for its whole generation: 320 tokens ÷ 40 TPS ≈ **8 s**.
+streaming request holds its slot for its whole generation: 320 tokens ÷ 40 TPS (the benchmarked
+per-stream decode rate on the L4, comfortably above the 30 TPS SLA floor) ≈ **8 s**.
 
 ```
  peak:    20 req/s × 8 s = 160 concurrent  →  ⌈160 / 32⌉ = 5 replicas
@@ -165,17 +166,18 @@ rates):
 
 ```python
 # Dedicated — autoscaled L4 GPU-hours over the month
-gpu_hours = 22*(10*4 + 14*1) + 8*(24*1)   # weekdays (10h busy@~4 + 14h@1) + weekends@1
-          = 1380
-dedicated = 1380 * 0.85                    # ≈ $1,173 / month  (L4 instance-hour)
+gpu_hours = 22*(10*4 + 14*1) + 8*(24*1)   # weekdays (10h busy@~4 + 14h@1) + weekends@1 = 1380
+dedicated = gpu_hours * 0.85               # ≈ $1,173 / month  (L4 instance-hour)
 
 # Per-token API — same 10M requests
-api = 15_000*0.18  +  3_200*0.18           # 15,000M input + 3,200M output tokens
-    = $3,276 / month
+api = 15_000*0.18 + 3_200*0.18             # 15,000M input + 3,200M output ≈ $3,276 / month
 ```
 
 **Dedicated is ~2.8× cheaper** at this volume — *and* gives you latency control and EU data residency
 the API can't. Below ~3–4M requests/month the API would win; this product is past the crossover.
+(Single-deployment accounting: the two-region setup in step 7 splits the peak traffic but doubles the
+warm floor and adds standby headroom — total lands nearer $2.0–2.4k/mo, still cheaper than the API,
+but closer to ~1.4×.)
 
 !!! key "Add engineering time — the real TCO"
     The GPU bill ($1,173) isn't the whole cost. The engineers building and operating this stack are a
@@ -211,7 +213,7 @@ All piped into the existing **Grafana/PagerDuty**, not a siloed dashboard.
         EU users ──► global LB ──► europe-west4 [vLLM × 1–8 L4, KV-aware routing]  │ active-passive
                                           ▲              ▲                         ┘
                                   autoscaler (1↔8)   priority queue
-                                  warm floor=1, 50s cold start, $1.2k/mo/region
+                                  warm floor=1, 50s cold start, ≈$2.2k/mo total
 ```
 
 ## What each chapter contributed

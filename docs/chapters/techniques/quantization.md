@@ -74,24 +74,25 @@ precision, *more* range. Same 8 bits, different balance.
     Model weights and activations are mostly small, with rare large **outliers** that carry
     disproportionate meaning. An integer format spreads its 256 codes evenly, so it either clips the
     outliers or wastes resolution on the dense middle. Floating-point's logarithmic spacing keeps fine
-    resolution near zero *and* reaches the outliers. That extra dynamic range is why **production,
-    quality-sensitive inference sticks to floating-point formats** — integer formats lack the range and
-    are reserved for size-critical local/edge inference.
+    resolution near zero *and* reaches the outliers. That extra dynamic range is why **quality-sensitive
+    inference computes in floating-point formats** — integer *compute* (W8A8) lacks the range.
+    Weight-only integer storage (like the W4A16 job below) sidesteps this by dequantizing to 16-bit
+    before the math; fully-integer pipelines are reserved for size-critical local/edge inference.
 
 ### The formats you'll meet
 
 | Name | Abbr | First arch | Notes |
 |------|------|-----------|-------|
 | 64-bit float | FP64 | Fermi (2010) | scientific computing only, never inference |
-| 32-bit float | FP32 | Kepler (2012) | sometimes training, almost never inference |
+| 32-bit float | FP32 | Tesla (2006) | sometimes training, almost never inference |
 | 16-bit float | FP16 | Pascal (2016) | common native training/inference precision |
-| Brain float 16 | BF16 | Ampere (2020) | FP16's range, less mantissa — the usual native format |
+| Brain float 16 | BF16 | Ampere (2020) | FP32's range, less mantissa — the usual native format |
 | 8-bit float | FP8 | Hopper (2022) | the inference **sweet spot** |
-| Mixed-precision FP8 | MXFP8 | Blackwell (2024) | microscaling FP8 |
+| Microscaling FP8 | MXFP8 | Blackwell (2024) | microscaling FP8 |
 | 8-bit integer | INT8 | Pascal (2016) | size-critical, lacks range |
 | 6-bit float | FP6 | Blackwell (exp.) | AMD adopting quickly |
 | 4-bit float | FP4 | Blackwell (2024) | aggressive; quality-risky |
-| Mixed-precision FP4 | MXFP4 | Blackwell (2024) | microscaling FP4 |
+| Microscaling FP4 | MXFP4 | Blackwell (2024) | microscaling FP4 |
 | NVIDIA FP4 | NVFP4 | Blackwell (proprietary) | finest-grain 4-bit |
 | 4-bit integer | INT4 | Turing (2018) | local/edge only |
 
@@ -248,7 +249,8 @@ measure it, three ways, always apples-to-apples against the original weights:
 
 ## Worked example: taking Qwen from BF16 to INT4
 
-Let's run the whole pipeline on a real target: **Qwen2.5-7B**, shipped in **BF16** we are going to quantized it down to **INT4 weights**. This is the most common job, and would result into Qwen2.5-7B-**W4A16** — *4-bit weights, 16-bit activations*. The activations stay at 16-bit on
+Let's run the whole pipeline on a real target: **Qwen2.5-7B**, shipped in **BF16**, which we quantize down to **INT4 weights**. This is
+the most common job, and yields Qwen2.5-7B-**W4A16** — *4-bit weights, 16-bit activations*. The activations stay at 16-bit on
 purpose: the [sensitivity ladder](#what-the-sensitivity-ladder) says weights tolerate quantization best,
 so we crush them and leave everything else alone.
 
@@ -256,7 +258,8 @@ so we crush them and leave everything else alone.
 
 Quantization happens per **group** of weights sharing one scale (here a group of 8; production uses
 ~128). Take one group from a weight row and quantize it **symmetrically** (zero-point `Z = 0`, standard
-for weights) into signed INT4, whose codes run `[-7, 7]` (qmax = 7):
+for weights) into signed INT4 using the symmetric code range `[-7, 7]` (qmax = 7; the format's −8 code goes
+unused to keep the grid symmetric):
 
 ```
 weights (BF16)  w = [ 0.12, -0.41,  0.93, -0.05,  0.55, -0.88,  0.27,  0.02 ]
@@ -295,7 +298,7 @@ Do that for all of Qwen2.5-7B's ~7.6B weights:
 | + group scales (group=128) | +0.12 GB | one BF16 scale per 128 weights |
 | **Effective INT4** | **≈ 3.9 GB** | **≈ 3.9× smaller** |
 
-A model that needed an 80 GB A100 now fits on a 12 GB consumer GPU — and decode, being memory-bound,
+A model that needed a 24 GB GPU now fits on a 12 GB consumer card — and decode, being memory-bound,
 gets faster because it moves ¼ the weight bytes per token.
 
 ### Step 3 — but don't actually use round-to-nearest
@@ -341,7 +344,8 @@ Putting the whole chapter's machinery into an actual workflow:
 
 5. DEPLOY
    load the checkpoint on vLLM / SGLang / TensorRT-LLM — they read the
-   quant format and run INT4 Tensor-Core kernels
+   quant format and run fused-dequant kernels (e.g. Marlin) that stream
+   the 4-bit weights into 16-bit Tensor-Core math
 ```
 
 !!! key "The one-paragraph version"
@@ -370,16 +374,19 @@ A **Deep Learning VM** image ships with CUDA and the NVIDIA driver, so there's n
 the system level:
 
 ```bash
+# europe-west4 (NL): good L4/A100 stock, close to DE. g2-standard-8 = the L4 machine
+# family. SPOT: ~60–70% cheaper for a throwaway job. 200 GB boot disk: room for the
+# BF16 weights + the output checkpoint.
 gcloud compute instances create qwen-quant \
-  --zone=europe-west4-a \                       # NL region — good L4/A100 stock, close to DE
-  --machine-type=g2-standard-8 \                # the L4 GPU family
+  --zone=europe-west4-a \
+  --machine-type=g2-standard-8 \
   --accelerator=type=nvidia-l4,count=1 \
-  --provisioning-model=SPOT \                   # ~60–70% cheaper for a throwaway job
+  --provisioning-model=SPOT \
   --maintenance-policy=TERMINATE \
   --image-family=common-cu124 \
   --image-project=deeplearning-platform-release \
   --metadata="install-nvidia-driver=True" \
-  --boot-disk-size=200GB                        # room for BF16 weights + output checkpoint
+  --boot-disk-size=200GB
 ```
 
 For bigger models, step up the accelerator: `a2-highgpu-1g` (A100 40 GB) or an `a3` machine (H100).
@@ -402,7 +409,7 @@ Cloud's network):
 ```python
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from llmcompressor import oneshot
-from llmcompressor.modifiers.gptq import GPTQModifier
+from llmcompressor.modifiers.quantization import GPTQModifier
 
 MODEL_ID = "Qwen/Qwen2.5-7B-Instruct"
 

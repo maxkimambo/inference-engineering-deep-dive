@@ -99,7 +99,7 @@ PCIe is also the road between **host RAM/SSD and the GPU**. It rarely limits ste
 (weights already live in HBM), but it dominates two moments: **loading a model** (a 140 GB model over
 64 GB/s PCIe is a hard ~2-second floor *before* any HBM-bandwidth or filesystem overhead) and
 **offloading** (spilling weights or KV to host memory when HBM is full — possible, but you've just
-demoted part of your model to a 14× slower tier, so latency craters). Grace-Hopper's **NVLink-C2C**
+demoted part of your model from HBM (3.35 TB/s) to PCIe (64 GB/s), a ~50× slower tier, so latency craters). Grace-Hopper's **NVLink-C2C**
 (900 GB/s CPU↔GPU) exists precisely to make host memory a usable overflow tier instead of a cliff.
 Cold-start latency (Chapter 7) is largely a PCIe-and-storage story.
 

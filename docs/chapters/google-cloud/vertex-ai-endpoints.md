@@ -70,6 +70,11 @@ Vertex hides the five-knob traffic autoscaler from Chapter 7 behind one target n
       pay nothing between requests — at the cost of a **cold start** (Ch. 7, § 7.2.2: node + container
       + weight load, tens of seconds to minutes) on the next request.
 
+    One Vertex-specific catch: a request that arrives at zero replicas isn't queued — it's dropped
+    with a **429** ("model is scaling up; retry"), and the *retry* lands after scale-up. Clients need
+    retry logic; Cloud Run (§ 9.3) holds the request through the cold start instead. Scale-to-zero
+    also requires a single-model endpoint.
+
     This is the same scale-to-zero trade as Chapter 8's Karpenter/cluster-autoscaler, now a single
     field. Use `0` for spiky/dev/internal traffic; use `1+` behind a latency SLA. It's the highest-
     leverage decision on the whole endpoint.
@@ -98,7 +103,7 @@ then shift:
 endpoint.deploy(model=model_v2, machine_type="g2-standard-12",
                 accelerator_type="NVIDIA_L4", accelerator_count=1,
                 min_replica_count=1, max_replica_count=3,
-                traffic_split={"0": 90, "0-new": 10})   # ids: existing vs new DeployedModel
+                traffic_split={"<v1_deployed_model_id>": 90, "0": 10})   # "0" = the model in THIS call
 
 # happy with v2? shift all traffic, then undeploy v1
 endpoint.update(traffic_split={"<v2_id>": 100})
@@ -120,7 +125,7 @@ gcloud ai endpoints deploy-model ENDPOINT_ID --region=us-central1 \
   --model=MODEL_ID --machine-type=g2-standard-12 \
   --accelerator=type=nvidia-l4,count=1 --min-replica-count=0 --max-replica-count=2   # scale-to-zero
 
-# call it (first request after idle pays the cold start):
+# call it (a request after idle gets a 429 while it scales up — retry until ready):
 gcloud ai endpoints predict ENDPOINT_ID --region=us-central1 --json-request=request.json
 
 # observe scale-to-zero: leave it idle, watch replicas drain to 0 in the console → $0 between requests

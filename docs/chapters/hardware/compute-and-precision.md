@@ -78,12 +78,14 @@ the model needs them.
 | **FP4 E2M1** | 1·2·1 | 4 | tiny | Blackwell inference; needs careful per-block scaling |
 | **INT8** | integer | 8 | fixed-point | quantized inference with a scale factor (Chapter 5) |
 
+<small>* 19 significant bits, stored in a 32-bit container.</small>
+
 !!! key "BF16 beats FP16 for one structural reason: range"
     FP16 spends more bits on the mantissa (10 vs 7) but fewer on the exponent (5 vs 8), so it's
     *more precise* but has a *much narrower* dynamic range — large activations overflow to infinity,
     which is why FP16 training needs fiddly loss-scaling. BF16 keeps FP32's full exponent (same
     range) and sacrifices precision the model doesn't miss. For inference you almost always want
-    BF16. (This is also why "qwen 64-bit" or "FP16 by default" are red flags — no serving model is
+    BF16. (This is also why phrases like "Qwen 64-bit" or "FP16 by default" are red flags — no serving model is
     FP32/FP64, and FP16-vs-BF16 is a deliberate range choice, not interchangeable.)
 
 The numeric *mechanics* of mapping real weights into INT8/INT4 — scale, zero-point, per-channel vs

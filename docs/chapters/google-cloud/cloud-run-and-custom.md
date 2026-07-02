@@ -13,13 +13,15 @@ scale-to-zero**: no requests → zero instances → **$0**, then it spins an ins
 request. One GPU per instance, billed by the second.
 
 ```bash
-# Serve vLLM serverless, scale-to-zero, weights streamed from GCS via Cloud Storage FUSE
+# Serve vLLM serverless, scale-to-zero, weights streamed from GCS via Cloud Storage FUSE.
+# L4 wants ≥4 CPU / 16 Gi; 8/32 recommended. min-instances=0: scale-to-zero.
+# concurrency=40: vLLM batches many users per instance (Ch. 5, § 5.0).
 gcloud run deploy vllm-qwen \
   --image=vllm/vllm-openai:latest \
   --gpu=1 --gpu-type=nvidia-l4 --no-gpu-zonal-redundancy \
-  --cpu=8 --memory=32Gi \                 # L4 wants ≥4 CPU/16Gi; 8/32 recommended
-  --min-instances=0 --max-instances=3 \   # ← scale-to-zero
-  --concurrency=40 \                      # vLLM batches many users per instance (Ch. 2)
+  --cpu=8 --memory=32Gi \
+  --min-instances=0 --max-instances=3 \
+  --concurrency=40 \
   --no-cpu-throttling --port=8000 --region=us-central1 \
   --args=--model=Qwen/Qwen2.5-7B-Instruct,--max-model-len=8192
 ```
@@ -42,10 +44,10 @@ familiar:
   container pulls fast and reads weights on demand — the managed cousin of Chapter 8's mounted-cache
   weight-loading strategy.
 
-The cost model is **per-second instance billing** (an L4 instance is roughly \$0.67/hr while running,
-no per-request fee), and **min-instances are billed at full rate even when idle** — so scale-to-zero
+The cost model is **per-second instance billing** (the 8 vCPU / 32 GiB / L4 config above bills roughly \$1.40/hr
+while running — the L4 itself is ~\$0.67/hr, CPU and memory the rest — no per-request fee), and **min-instances are billed at full rate even when idle** — so scale-to-zero
 is exactly what makes it cheap. Push `--concurrency` as high as quality allows: vLLM's continuous
-batching (Ch. 2) means one warm GPU serves many users, dividing the hourly cost across all of them.
+batching (Ch. 5, § 5.0) means one warm GPU serves many users, dividing the hourly cost across all of them.
 
 ## Vertex custom containers: bring your own image
 

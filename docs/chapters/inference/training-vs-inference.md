@@ -11,7 +11,7 @@ Training and inference run the same model, but they run it in opposite *shapes*.
 
 **Training** is a batch job. You have a fixed, enormous dataset; you push large batches through the
 model, compute how wrong it was, and propagate that error *backward* to nudge every parameter. Three
-passes happen per step — a forward pass, a backward pass, and an optimizer update — and you store the
+phases happen per step — a forward pass, a backward pass, and an optimizer update — and you store the
 intermediate activations from the forward pass because the backward pass needs them. It's a closed
 system: known inputs, known size, no one waiting. You optimize for one thing — keep the very
 expensive cluster as busy as possible until the loss curve flattens.

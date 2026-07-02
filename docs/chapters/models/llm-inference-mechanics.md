@@ -437,7 +437,7 @@ This cost is exactly why modern models reduce `n_kv_heads`:
 - **MQA (Multi-Query Attention)** — *all* query heads share a *single* K/V head. Tiny cache, some
   quality loss.
 - **GQA (Grouped-Query Attention)** — the middle ground used by most current models: groups of
-  query heads share a K/V head. The figure's "64 Q-heads, 8 KV-heads" is GQA — an 8× smaller cache
+  query heads share a K/V head. A config reading "64 Q-heads, 8 KV-heads" is GQA — an 8× smaller cache
   than MHA for nearly the same quality.
 
 When you read `num_attention_heads: 64, num_key_value_heads: 8` in a config, *that's the model

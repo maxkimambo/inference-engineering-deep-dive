@@ -35,6 +35,7 @@ cluster).
 | [8.3](infrastructure-as-code.md) | **Infrastructure as Code** | How do you make a GPU cluster reproducible — Terraform or Pulumi, and GitOps on top? |
 | [8.4](orchestration-patterns.md) | **Orchestration patterns** | What pod/deployment shapes keep a slow-starting, weight-loading GPU server healthy? |
 | [8.5](multi-cloud.md) | **Multi-cloud strategies** | How do you deploy the *same* workload across clouds without rewriting it per provider? |
+| [8.6](hands-on-gke-platform.md) | **Hands-on: GKE platform** | Build the whole platform end to end — Terraform to a serving, scale-to-zero, failover-ready model. |
 
 ## The mindset shift from web infra
 

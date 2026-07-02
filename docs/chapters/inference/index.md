@@ -56,7 +56,7 @@ other:
 
 !!! key "Latency, throughput, and cost — pick your balance, you can't max all three"
     - **Latency** — how fast a *single* request is answered (the user's experience).
-    - **Throughput** — how many requests the system handles *at once* (the system's efficiency).
+    - **Throughput** — how much work the system completes per unit time (the system's efficiency).
     - **Cost** — the dollars per token you spend getting there.
 
     These fight. The classic move to raise throughput — batching many requests onto one GPU so its

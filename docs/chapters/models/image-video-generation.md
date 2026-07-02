@@ -26,7 +26,7 @@ An HD image is 1024×1024 = over a million pixels. The denoiser computes attenti
 canvas every step; doing that in pixel space is infeasible.
 
 - **Latent space** — a compact, lower-dimensional encoding of an image. A latent might be 128×128
-  — about **1%** of the pixel count — while preserving the structure that matters.
+  — about **1.5%** of the pixel count — while preserving the structure that matters.
 
 Recall the encoder/decoder framing from [Neural Networks](neural-networks.md): text inference
 *grows* dimensionality (token → big vector); image inference *shrinks* it (million pixels →
@@ -80,9 +80,9 @@ Image generation is steered per-request:
 ## Architecture: the diffusion transformer
 
 Modern denoisers are **diffusion transformers** — the same transformer machinery as LLMs, but
-processing image **patches** instead of text tokens. During training, images are cut into
-overlapping 2×2 or 4×4 patches and embedded into latent space; inference runs the reverse, ending
-with the VAE expanding latents to pixels.
+processing image **patches** instead of text tokens. The VAE first encodes the image into a latent; every denoiser pass cuts
+that latent into non-overlapping 2×2 patches, embeds each as a token, runs the transformer, and
+un-patches the output. At the very end the VAE expands the final latent back to pixels.
 
 A clean reference pipeline is **SDXL**: noise → base denoiser → refiner denoiser → VAE decode →
 1024×1024 image. Newer models keep the shape but scale every component up:

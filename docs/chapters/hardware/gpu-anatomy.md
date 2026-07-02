@@ -79,8 +79,8 @@ in one operation, in one clock region of time.
 
 Concretely, a Tensor Core computes `D = A * B + C` where `A`, `B`, `C`, `D` are small tiles (e.g.
 4×4, 8×8, or larger depending on precision and generation). One instruction does dozens to hundreds
-of multiply-accumulates. Stack thousands of Tensor Cores across 132 SMs and you get the headline
-number: an H100 does **989 trillion** FP16 multiply-accumulates per second (dense — we'll dissect
+of multiply-accumulates. Stack 528 Tensor Cores across 132 SMs and you get the headline
+number: an H100 does **989 trillion** FP16 floating-point operations per second (dense — we'll dissect
 that number in § 3.3).
 
 !!! key "Why the Tensor Core exists, in roofline terms"

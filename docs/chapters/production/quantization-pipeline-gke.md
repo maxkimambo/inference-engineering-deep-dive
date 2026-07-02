@@ -43,12 +43,14 @@ The cost trick: a dedicated node pool with `--min-nodes=0`. It holds **no GPU no
 nothing) until a Pod requests a GPU, then scales up for the job and back to zero after.
 
 ```bash
+# gpu-driver-version=default: GKE installs the driver. min-nodes=0: scale to zero.
+# --spot: ~60–70% cheaper for a batch job.
 gcloud container node-pools create gpu-quant \
   --cluster=CLUSTER --location=REGION \
   --machine-type=g2-standard-8 \
-  --accelerator=type=nvidia-l4,count=1,gpu-driver-version=default \  # GKE installs the driver
-  --enable-autoscaling --num-nodes=0 --min-nodes=0 --max-nodes=3 \   # ← scale to zero
-  --spot \                                                            # ~60–70% cheaper
+  --accelerator=type=nvidia-l4,count=1,gpu-driver-version=default \
+  --enable-autoscaling --num-nodes=0 --min-nodes=0 --max-nodes=3 \
+  --spot \
   --node-locations=REGION-a
 ```
 
@@ -72,7 +74,7 @@ variables, so one image quantizes *any* model with *any* recipe.
 import os
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from llmcompressor import oneshot
-from llmcompressor.modifiers.gptq import GPTQModifier
+from llmcompressor.modifiers.quantization import GPTQModifier
 
 MODEL_ID   = os.environ["MODEL_ID"]                       # e.g. Qwen/Qwen2.5-7B-Instruct
 OUTPUT_DIR = os.environ["OUTPUT_DIR"]                     # a path on the mounted bucket
@@ -85,7 +87,8 @@ tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
 
 oneshot(
     model=model,
-    dataset="HuggingFaceH4/ultrachat_200k",
+    dataset="ultrachat_200k",
+    splits={"calibration": f"train_sft[:{SAMPLES}]"},
     recipe=GPTQModifier(targets="Linear", scheme=SCHEME, ignore=IGNORE),
     max_seq_length=2048,
     num_calibration_samples=SAMPLES,
@@ -100,7 +103,7 @@ print(f"wrote quantized checkpoint to {OUTPUT_DIR}")
 
 ```dockerfile
 FROM pytorch/pytorch:2.5.1-cuda12.4-cudnn9-runtime
-RUN pip install --no-cache-dir llmcompressor
+RUN pip install --no-cache-dir llmcompressor==0.6.0   # pinned, per §7.1.1
 COPY quantize.py /app/quantize.py
 ENTRYPOINT ["python", "/app/quantize.py"]
 ```
@@ -108,7 +111,7 @@ ENTRYPOINT ["python", "/app/quantize.py"]
 Build and push to Artifact Registry (Cloud Build keeps it off your laptop):
 
 ```bash
-gcloud builds submit --tag REGION-docker.pkg.dev/PROJECT_ID/REPO/quantize:latest
+gcloud builds submit --tag REGION-docker.pkg.dev/PROJECT_ID/REPO/quantize:v1
 ```
 
 ## 3 — Give the job bucket access with Workload Identity
@@ -235,7 +238,7 @@ spec:
         cloud.google.com/gke-accelerator: nvidia-l4
       containers:
         - name: vllm
-          image: vllm/vllm-openai:latest
+          image: vllm/vllm-openai:v0.8.5   # pinned, per §7.1.1
           args: ["--model", "/models/Qwen2.5-7B-Instruct-W4A16-G128"]
           resources:
             limits: { nvidia.com/gpu: "1" }
@@ -251,8 +254,13 @@ spec:
 
 Publishing a new quantization is then a **rolling update**: point the Deployment's `--model` arg at the
 new checkpoint directory and `kubectl apply` — GKE drains old Pods only as new ones become ready, so
-serving never drops (the zero-downtime deploy pattern from §7.4). Because INT4 needs ~¼ the VRAM, the
-serving pool can run smaller, denser GPU nodes than a BF16 deployment would.
+serving never drops (the zero-downtime deploy pattern from §7.4). Because INT4 weights are ~¼ the
+bytes (the KV cache is unchanged — activations stay 16-bit), the serving pool can run smaller,
+denser GPU nodes than a BF16 deployment would.
+
+One production hardening note: this sketch reuses `quant-ksa`, whose Google service account holds
+`roles/storage.objectAdmin`. Serving only reads — give it its own KSA bound to a service account
+with `roles/storage.objectViewer`; the writer identity belongs to the quantization Job alone.
 
 ## What you built
 

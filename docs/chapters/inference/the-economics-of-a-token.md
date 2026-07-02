@@ -12,7 +12,7 @@ The cost of a token comes from one ratio: the price of the hardware over how man
 produces in the same time.
 
 \[
-\frac{\$}{\text{million tokens}} = \frac{\text{GPU \$/hour}}{\text{tokens/hour}}
+\frac{\$}{\text{million tokens}} = \frac{\text{GPU \$/hour}}{\text{million tokens/hour}}
 \]
 
 Two illustrative deployments — the same arithmetic, different hardware:

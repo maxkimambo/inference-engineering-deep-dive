@@ -46,7 +46,7 @@ flips with utilization:
 - **Per second** (Cloud Run) — pay only while an instance runs. Cheapest for **bursty** traffic that's
   idle much of the day; scale-to-zero is the whole win.[^crgpu]
 - **Per GPU-hour / node-hour** (Vertex / GKE) — you rent the hardware whole. Cheapest **per token only
-  at high utilization**, where continuous batching (Ch. 2) packs the GPU and divides its hourly cost
+  at high utilization**, where continuous batching (Ch. 5, § 5.0) packs the GPU and divides its hourly cost
   across many concurrent requests.
 
 !!! key "Match the billing model to your traffic shape, not your instinct"

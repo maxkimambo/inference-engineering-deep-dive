@@ -27,14 +27,14 @@ args filled in for you. You choose the serving engine:
 - **vLLM** — the GPU default (Ch. 4): continuous batching, paged KV cache, OpenAI-compatible. What most
   open-model GPU deployments use.
 - **Hex-LLM** — Google's own high-throughput LLM engine, **optimized for TPU** (Ch. 3's TPU v5e/v6e).[^mgserve]
-  If you're serving on TPUs for `$/token` efficiency, this is the Google-native path vLLM-on-GPU's TPU
-  counterpart.
+  If you're serving on TPUs for `$/token` efficiency, this is the Google-native path — the TPU counterpart
+  of vLLM-on-GPU.
 - **TGI** (Text Generation Inference) — Hugging Face's server, also offered.
 
 ```python
 # Deploy Gemma from Model Garden in one SDK call — container + args are chosen for you
 from vertexai import model_garden
-model = model_garden.OpenModel("google/gemma-3-9b-it")
+model = model_garden.OpenModel("google/gemma3@gemma-3-4b-it")
 endpoint = model.deploy(
     machine_type="g2-standard-12", accelerator_type="NVIDIA_L4", accelerator_count=1,
     min_replica_count=0, max_replica_count=2,    # scale-to-zero, same as § 9.1
@@ -57,7 +57,7 @@ import openai, google.auth, google.auth.transport.requests
 creds, project = google.auth.default()
 creds.refresh(google.auth.transport.requests.Request())
 client = openai.OpenAI(
-    base_url=f"https://us-central1-aiplatform.googleapis.com/v1/projects/{project}/locations/us-central1/endpoints/openapi",
+    base_url=f"https://us-central1-aiplatform.googleapis.com/v1beta1/projects/{project}/locations/us-central1/endpoints/openapi",
     api_key=creds.token)
 resp = client.chat.completions.create(
     model="meta/llama-3.1-8b-instruct-maas",
@@ -85,14 +85,14 @@ print(resp.choices[0].message.content)
 # A) self-deploy Gemma from Model Garden (CLI) — lands on a managed endpoint
 gcloud ai model-garden models list --model-filter=gemma
 gcloud ai model-garden models deploy \
-  --model=google/gemma-3-9b-it --region=us-central1 \
+  --model=google/gemma3@gemma-3-4b-it --region=us-central1 \
   --machine-type=g2-standard-12 --accelerator-type=NVIDIA_L4 \
   --min-replica-count=0 --max-replica-count=2     # one command → a serving endpoint
 
 # B) or skip all of that — call an open model via MaaS, per token, no GPU
 curl -s -X POST -H "Authorization: Bearer $(gcloud auth print-access-token)" \
   -H "Content-Type: application/json" \
-  "https://us-central1-aiplatform.googleapis.com/v1/projects/$PROJECT/locations/us-central1/endpoints/openapi/chat/completions" \
+  "https://us-central1-aiplatform.googleapis.com/v1beta1/projects/$PROJECT/locations/us-central1/endpoints/openapi/chat/completions" \
   -d '{"model":"meta/llama-3.1-8b-instruct-maas",
        "messages":[{"role":"user","content":"hello"}]}'
 ```
