@@ -379,12 +379,6 @@ this same code with per-step logging, a `print(model)` layer tour, and Colab mem
 !pip install llmcompressor      # pulls in transformers, datasets, compressed-tensors
 ```
 
-!!! warning "If a pydantic error appears"
-    A `ValidationError` when building the recipe means a `transformers` / `compressed-tensors` /
-    `pydantic` version mismatch — upgrade the trio: `pip install -U llmcompressor transformers
-    compressed-tensors`. Pinning an old `llmcompressor` also works, but on Colab it can drag `torch`
-    back and break the pre-installed packages, so prefer upgrading.
-
 !!! tip "Faster Hugging Face downloads"
     Authenticated pulls get higher rate limits (and any gated models), and `hf_transfer` — a Rust
     downloader — saturates the bandwidth. In Colab, add your token in the **🔑 Secrets** panel as
