@@ -387,10 +387,9 @@ this same code with per-step logging, a `print(model)` layer tour, and Colab mem
     ```python
     import os
     from google.colab import userdata
-    from huggingface_hub import login
 
-    login(token=userdata.get("HF_TOKEN"))          # authenticated = higher rate limits
-    os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "1"   # after: pip install hf_transfer
+    os.environ["HF_TOKEN"] = userdata.get("HF_TOKEN")   # huggingface_hub uses this automatically
+    os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "1"        # after: pip install hf_transfer
     ```
 
 ### The quantization script
