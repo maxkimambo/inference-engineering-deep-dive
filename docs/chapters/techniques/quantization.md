@@ -362,6 +362,13 @@ library — because its output loads straight into vLLM/SGLang and its layer-tar
 control you want.[^llmc] Quantization is a one-off batch job, so we run it on an ephemeral
 **Compute Engine** GPU VM and stash the result in **Cloud Storage** — no local GPU required.
 
+!!! tip "Prefer a notebook? Run it in Colab"
+    Everything below is also a **runnable Colab notebook** with a step-by-step explanation and
+    per-step logging for each stage:
+    [**Open the quantization notebook in Colab :material-open-in-new:**](https://colab.research.google.com/github/maxkimambo/inference-engineering-deep-dive/blob/main/docs/notebooks/quantization-qwen-w4a16.ipynb).
+    It defaults to a small Qwen you can quantize on a **free T4** in a few minutes; the Compute
+    Engine workflow here is the same recipe at 7B scale.
+
 !!! info "What you need on Google Cloud"
     A project with **GPU quota** in your target region (request `NVIDIA L4 GPUs` quota if you have
     none), the `gcloud` CLI authenticated (`gcloud auth login`), and a Cloud Storage bucket for the
