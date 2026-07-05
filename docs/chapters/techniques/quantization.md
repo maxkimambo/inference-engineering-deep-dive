@@ -521,8 +521,59 @@ vLLM needs no special flags, it detects the quantization from the saved config:
 vllm serve ./Qwen2.5-7B-Instruct-W4A16-G128
 ```
 
-Then evaluate (§5.1.3): compare perplexity and your custom eval against the original
-`Qwen2.5-7B-Instruct`. If it passes, you've got a ~4× smaller model serving on a quarter of the VRAM.
+Then evaluate — and this is the part that decides whether the quantized model actually ships.
+
+### Evaluate before you ship
+
+The bar from [§5.1.3](#513-measuring-quality-impact) is *zero perceptible loss*, and you prove it by
+measuring every metric as a **delta against the original BF16 weights** — same harness, same prompts,
+same sampling params — then gating on thresholds you agreed up front. Four checks, cheap to decisive:
+
+| Check | Measures | Tool | You want |
+|-------|----------|------|----------|
+| **Perplexity** | gross breakage (tripwire) | `lm-eval` `wikitext` | small +Δ |
+| **Benchmarks** | capability loss | `lm-eval` MMLU / GSM8K / ARC | drop within noise |
+| **Custom eval** | *your* job — the deploy gate | your graders | holds vs baseline |
+| **LLM-as-judge** | generative quality (tone, format) | stronger model, blind | no preference shift |
+
+Run the harness **twice** — original, then candidate — and diff the reports:
+
+```bash
+pip install lm-eval
+
+# baseline: the original BF16 weights
+lm_eval --model hf   --model_args pretrained=Qwen/Qwen2.5-7B-Instruct \
+        --tasks wikitext,mmlu,gsm8k,arc_challenge --batch_size auto --output_path out/bf16
+
+# candidate: the quantized checkpoint (vLLM detects the quant format)
+lm_eval --model vllm --model_args pretrained=./Qwen2.5-7B-Instruct-W4A16-G128 \
+        --tasks wikitext,mmlu,gsm8k,arc_challenge --batch_size auto --output_path out/w4a16
+```
+
+The methodology that separates a real gate from theatre:
+
+- **Baseline-relative, not absolute.** `62.1% → 61.8%` is the signal, not the 62%. Size your **noise
+  floor** first by running the baseline against *itself* twice; use greedy decoding (`temp=0`) and a
+  fixed eval set to keep the band tight. A drop only counts if it clears that band.
+- **The custom eval gates — benchmarks don't.** A model can hold MMLU and still regress on your
+  domain. Your golden set of real prompts, with automatic graders (exact-match, regex, JSON-schema,
+  or a judge), is what says ship / no-ship.
+- **Look past accuracy.** Re-run your **format/function-calling** and **safety/refusal** suites
+  (quantization quietly breaks structured output), test **long context** (the KV cache and RoPE
+  interact badly with low precision), and **confirm you actually got faster** — benchmark served
+  throughput and p99 latency on vLLM (`vllm bench throughput`), since speed was the whole point.
+
+!!! key "The release decision"
+    Put every delta in one table, apply the thresholds, and let the numbers decide. Pick the **most
+    aggressive** quant setting that still passes your custom eval, and no further. If a gate fails,
+    don't abandon 4-bit — add the likely-sensitive layers to `ignore` (edge layers, then attention,
+    then `down_proj`), or step W4A16 → W8A16, and re-measure.
+
+The [Colab notebook](https://colab.research.google.com/github/maxkimambo/inference-engineering-deep-dive/blob/main/docs/notebooks/quantization-qwen-w4a16.ipynb)
+runs this whole gate as code — perplexity, `lm-eval` benchmarks, a custom golden-set eval, and a
+pass/fail release table comparing BF16 against the W4A16 checkpoint.
+
+Pass the gate and you've got a ~4× smaller model serving on a quarter of the VRAM.
 
 ??? note "Prefer a dedicated VM? Provision one on Compute Engine"
     Colab is the fastest way to *try* this. For the full 7B run, a repeatable pipeline, or to keep the
