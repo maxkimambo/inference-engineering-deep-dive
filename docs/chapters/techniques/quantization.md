@@ -379,10 +379,11 @@ this same code with per-step logging, a `print(model)` layer tour, and Colab mem
 !pip install llmcompressor      # pulls in transformers, datasets, compressed-tensors
 ```
 
-!!! warning "Pin the version if you hit a pydantic error"
-    A floating install can pull a `transformers` / `compressed-tensors` / `pydantic` combination that
-    mismatches, and the modifier config (a pydantic model) then fails to validate at construction time.
-    The notebook pins `llmcompressor==0.8.0` to avoid it.
+!!! warning "If a pydantic error appears"
+    A `ValidationError` when building the recipe means a `transformers` / `compressed-tensors` /
+    `pydantic` version mismatch — upgrade the trio: `pip install -U llmcompressor transformers
+    compressed-tensors`. Pinning an old `llmcompressor` also works, but on Colab it can drag `torch`
+    back and break the pre-installed packages, so prefer upgrading.
 
 ### The quantization script
 
