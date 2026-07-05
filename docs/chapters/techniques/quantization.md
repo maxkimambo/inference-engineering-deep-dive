@@ -355,63 +355,38 @@ Putting the whole chapter's machinery into an actual workflow:
     back** — a higher-granularity FP4, fewer quantized layers, or 8-bit. You get a ~4× smaller, faster
     model, and the entire job is managing the quality you trade for it.
 
-## Hands-on: quantizing Qwen on Google Cloud with `llm-compressor`
+## Hands-on: quantizing Qwen in a Colab notebook
 
-Here is the recipe above as runnable code. We use **`llm-compressor`** — the vLLM-native quantization
-library — because its output loads straight into vLLM/SGLang and its layer-targeting is exactly the
-control you want.[^llmc] Quantization is a one-off batch job, so we run it on an ephemeral
-**Compute Engine** GPU VM and stash the result in **Cloud Storage** — no local GPU required.
+Here's the recipe above as runnable code — and you don't need to provision anything. The whole job
+runs in a free **Google Colab** GPU notebook. We use **`llm-compressor`**, the vLLM-native
+quantization library, because its output loads straight into vLLM/SGLang and its layer-targeting is
+exactly the control you want.[^llmc]
 
-!!! tip "Prefer a notebook? Run it in Colab"
-    Everything below is also a **runnable Colab notebook** with a step-by-step explanation and
-    per-step logging for each stage:
-    [**Open the quantization notebook in Colab :material-open-in-new:**](https://colab.research.google.com/github/maxkimambo/inference-engineering-deep-dive/blob/main/docs/notebooks/quantization-qwen-w4a16.ipynb).
-    It defaults to a small Qwen you can quantize on a **free T4** in a few minutes; the Compute
-    Engine workflow here is the same recipe at 7B scale.
+[![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/maxkimambo/inference-engineering-deep-dive/blob/main/docs/notebooks/quantization-qwen-w4a16.ipynb)
 
-!!! info "What you need on Google Cloud"
-    A project with **GPU quota** in your target region (request `NVIDIA L4 GPUs` quota if you have
-    none), the `gcloud` CLI authenticated (`gcloud auth login`), and a Cloud Storage bucket for the
-    output. Quantizing 7B fits on a single **L4 (24 GB)**; the job runs ~20–60 min, so the VM costs
-    roughly **$1–2** — *delete it when done* (step 4).
+**Read the walkthrough below first, then open the notebook and run it cell by cell.** The notebook is
+this same code with per-step logging, a `print(model)` layer tour, and Colab memory tricks.
 
-### 1 — Provision a GPU VM
+!!! tip "Runtime: pick a free T4"
+    In Colab, set **Runtime → Change runtime type → T4 GPU**. A free T4 (16 GB) quantizes a small Qwen
+    (`Qwen2.5-0.5B-Instruct`, the notebook default) in a few minutes. The **7B** model shown below
+    needs more VRAM than a free T4 gives — use a **Colab Pro L4/A100**, or the Compute Engine VM at the
+    end of this section.
 
-A **Deep Learning VM** image ships with CUDA and the NVIDIA driver, so there's nothing to install at
-the system level:
+### Install the library
 
 ```bash
-# europe-west4 (NL): good L4/A100 stock, close to DE. g2-standard-8 = the L4 machine
-# family. SPOT: ~60–70% cheaper for a throwaway job. 200 GB boot disk: room for the
-# BF16 weights + the output checkpoint.
-gcloud compute instances create qwen-quant \
-  --zone=europe-west4-a \
-  --machine-type=g2-standard-8 \
-  --accelerator=type=nvidia-l4,count=1 \
-  --provisioning-model=SPOT \
-  --maintenance-policy=TERMINATE \
-  --image-family=common-cu124 \
-  --image-project=deeplearning-platform-release \
-  --metadata="install-nvidia-driver=True" \
-  --boot-disk-size=200GB
+!pip install llmcompressor      # pulls in transformers, datasets, compressed-tensors
 ```
 
-For bigger models, step up the accelerator: `a2-highgpu-1g` (A100 40 GB) or an `a3` machine (H100).
+!!! warning "Pin the version if you hit a pydantic error"
+    A floating install can pull a `transformers` / `compressed-tensors` / `pydantic` combination that
+    mismatches, and the modifier config (a pydantic model) then fails to validate at construction time.
+    The notebook pins `llmcompressor==0.8.0` to avoid it.
 
-### 2 — SSH in and install the library
+### The quantization script
 
-```bash
-gcloud compute ssh qwen-quant --zone=europe-west4-a
-
-# on the VM — driver and CUDA are already present from the image:
-nvidia-smi                     # confirm the L4 is visible
-pip install llmcompressor      # pulls in transformers, datasets, compressed-tensors
-```
-
-### 3 — The quantization script
-
-Run this on the VM (the BF16 weights download from Hugging Face on first call — fast over Google
-Cloud's network):
+This is the whole job — the BF16 weights download from Hugging Face on first call:
 
 ```python
 from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -535,34 +510,47 @@ recipe = AWQModifier(targets="Linear", scheme="W4A16", ignore=["lm_head"])
 # ...identical oneshot(...) and save_pretrained(...)
 ```
 
-### 4 — Save to Cloud Storage and tear down
+### Save, then serve and evaluate
 
-Push the ~3.9 GB checkpoint to a bucket so it outlives the VM, then **delete the instance** — a
-forgotten GPU VM is the classic surprise bill:
-
-```bash
-# on the VM — copy the output checkpoint to your bucket
-gcloud storage cp -r ./Qwen2.5-7B-Instruct-W4A16-G128 gs://YOUR_BUCKET/models/
-
-# back on your laptop — delete the GPU VM (stops all billing for it)
-gcloud compute instances delete qwen-quant --zone=europe-west4-a --quiet
-```
-
-### 5 — Serve on vLLM
-
-Serve from any GPU instance (a smaller one — INT4 needs ~¼ the VRAM). Pull the checkpoint from the
-bucket; vLLM needs no special flags, it detects the quantization from the saved config:
+`save_compressed=True` writes the packed ~3.9 GB checkpoint. Colab's disk is ephemeral, so **persist
+it before the runtime recycles** — copy to Google Drive, push to a Hugging Face Hub repo, or `gcloud
+storage cp` it to a bucket. Then serve it from any GPU box (a smaller one — INT4 needs ~¼ the VRAM);
+vLLM needs no special flags, it detects the quantization from the saved config:
 
 ```bash
-gcloud storage cp -r gs://YOUR_BUCKET/models/Qwen2.5-7B-Instruct-W4A16-G128 .
 vllm serve ./Qwen2.5-7B-Instruct-W4A16-G128
 ```
 
-Then evaluate (§5.1.3): compare perplexity and your custom eval against the original `Qwen2.5-7B-Instruct`.
-If it passes, you've got a ~4× smaller model serving on a quarter of the VRAM.
+Then evaluate (§5.1.3): compare perplexity and your custom eval against the original
+`Qwen2.5-7B-Instruct`. If it passes, you've got a ~4× smaller model serving on a quarter of the VRAM.
+
+??? note "Prefer a dedicated VM? Provision one on Compute Engine"
+    Colab is the fastest way to *try* this. For the full 7B run, a repeatable pipeline, or to keep the
+    checkpoint on Google Cloud, run the **same script** on an ephemeral GPU VM instead. A **Deep
+    Learning VM** image ships with CUDA and the driver, so there's nothing to install at the system
+    level. Provision an L4, SSH in, `pip install llmcompressor`, run the script, push the result, and
+    **delete the instance** — a forgotten GPU VM is the classic surprise bill:
+
+    ```bash
+    # europe-west4 (NL): good L4/A100 stock. SPOT: ~60–70% cheaper for a throwaway job.
+    gcloud compute instances create qwen-quant \
+      --zone=europe-west4-a --machine-type=g2-standard-8 \
+      --accelerator=type=nvidia-l4,count=1 --provisioning-model=SPOT \
+      --maintenance-policy=TERMINATE --image-family=common-cu124 \
+      --image-project=deeplearning-platform-release \
+      --metadata="install-nvidia-driver=True" --boot-disk-size=200GB
+
+    gcloud compute ssh qwen-quant --zone=europe-west4-a
+    #   on the VM: pip install llmcompressor && python quantize.py
+
+    gcloud storage cp -r ./Qwen2.5-7B-Instruct-W4A16-G128 gs://YOUR_BUCKET/models/
+    gcloud compute instances delete qwen-quant --zone=europe-west4-a --quiet   # stops all billing
+    ```
+
+    For bigger models, step up the accelerator: `a2-highgpu-1g` (A100 40 GB) or an `a3` machine (H100).
 
 !!! tip "Productionizing the job"
-    The hand-run VM above is fine for a one-off. For a *repeatable* pipeline — new model versions,
+    The hand-run job above is fine for a one-off. For a *repeatable* pipeline — new model versions,
     scheduled re-quantizes, your whole model catalog — you want this as an automated, scale-to-zero
     batch job on Kubernetes. That's a full hands-on of its own:
     [**Chapter 7 → A Quantization Pipeline on GKE**](../production/quantization-pipeline-gke.md).

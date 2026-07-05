@@ -1,7 +1,7 @@
 # Hands-on: a Quantization Pipeline on GKE
 
-In [Chapter 5](../techniques/quantization.md#hands-on-quantizing-qwen-on-google-cloud-with-llm-compressor)
-we quantized Qwen by hand on a throwaway GPU VM. That's fine once. In production you want it
+In [Chapter 5](../techniques/quantization.md#hands-on-quantizing-qwen-in-a-colab-notebook)
+we quantized Qwen by hand in a Colab notebook. That's fine once. In production you want it
 **repeatable, automated, and cheap when idle**: a new model version lands, a job spins up a GPU,
 quantizes, writes the checkpoint to a bucket, and the GPU disappears — then serving picks up the new
 weights. This page builds exactly that on **Google Kubernetes Engine (GKE)**.
