@@ -385,6 +385,20 @@ this same code with per-step logging, a `print(model)` layer tour, and Colab mem
     compressed-tensors`. Pinning an old `llmcompressor` also works, but on Colab it can drag `torch`
     back and break the pre-installed packages, so prefer upgrading.
 
+!!! tip "Faster Hugging Face downloads"
+    Authenticated pulls get higher rate limits (and any gated models), and `hf_transfer` — a Rust
+    downloader — saturates the bandwidth. In Colab, add your token in the **🔑 Secrets** panel as
+    `HF_TOKEN`, then:
+
+    ```python
+    import os
+    from google.colab import userdata
+    from huggingface_hub import login
+
+    login(token=userdata.get("HF_TOKEN"))          # authenticated = higher rate limits
+    os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "1"   # after: pip install hf_transfer
+    ```
+
 ### The quantization script
 
 This is the whole job — the BF16 weights download from Hugging Face on first call:
